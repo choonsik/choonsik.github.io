@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>워드프레스 XML 변환기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style id="theme-style">
+        /* --- 테마 변수 정의 --- */
+        body.theme-light {
+            --bg-primary: #f9fafb;
+            --bg-secondary: #ffffff;
+            --text-primary: #1f2937;
+            --text-secondary: #6b7280;
+            --heading-color: #111827;
+            --border-color: #e5e7eb;
+            --accent-color: #3b82f6;
+            --button-bg: #e5e7eb;
+            --button-text: #1f2937;
+            --button-hover-bg: #d1d5db;
+            --placeholder-bg: #f3f4f6;
+            --placeholder-text: #6b7280;
+        }
+
+        body.theme-dark {
+            --bg-primary: #111827;
+            --bg-secondary: #1f2937;
+            --text-primary: #d1d5db;
+            --text-secondary: #9ca3af;
+            --heading-color: #f9fafb;
+            --border-color: #374151;
+            --accent-color: #60a5fa;
+            --button-bg: #374151;
+            --button-text: #f9fafb;
+            --button-hover-bg: #4b5563;
+            --placeholder-bg: #374151;
+            --placeholder-text: #9ca3af;
+        }
+
+        body.theme-sepia {
+            --bg-primary: #fdf8f2;
+            --bg-secondary: #fbf0e4;
+            --text-primary: #5d4037;
+            --text-secondary: #795548;
+            --heading-color: #3e2723;
+            --border-color: #d7ccc8;
+            --accent-color: #8d6e63;
+            --button-bg: #efebe9;
+            --button-text: #5d4037;
+            --button-hover-bg: #d7ccc8;
+            --placeholder-bg: #efebe9;
+            --placeholder-text: #795548;
+        }
+        
+        /* --- 전역 스타일 적용 --- */
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        main {
+            background-color: var(--bg-secondary);
+        }
+        h1, h2, h3, h4 {
+            color: var(--heading-color);
+        }
+        p, label {
+            color: var(--text-secondary);
+        }
+        .border-themed { border-color: var(--border-color); }
+        .tab-button.border-transparent { border-color: transparent; }
+        .tab-button.text-gray-500 { color: var(--text-secondary); }
+        .tab-button.border-blue-500 { border-color: var(--accent-color); }
+        .tab-button.text-blue-600 { color: var(--accent-color); }
+        .subtab-button.border-blue-500 { border-color: var(--accent-color); }
+        .subtab-button.text-blue-600 { color: var(--accent-color); }
+        .subtab-button.text-gray-500 { color: var(--text-secondary); }
+        .view-button.border-blue-500 { border-color: var(--accent-color); }
+        .view-button.text-blue-600 { color: var(--accent-color); }
+        .view-button.text-gray-500 { color: var(--text-secondary); }
+        .filter-button.bg-gray-200 { background-color: var(--button-bg); color: var(--button-text); }
+        .filter-button.bg-gray-200:hover { background-color: var(--button-hover-bg); }
+        .filter-button.bg-blue-500 { background-color: var(--accent-color); }
+        .item-button:hover { background-color: var(--placeholder-bg); }
+        .item-button.bg-blue-100 { background-color: var(--accent-color) !important; color: white !important; }
+        select, input[type="search"] {
+            background-color: var(--bg-secondary);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        /* --- 미리보기 콘텐츠 스타일 --- */
+        .themed-content {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        .themed-content h1, .themed-content h2, .themed-content h3, .themed-content h4 {
+            color: var(--heading-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.3em;
+            margin-top: 1.5em;
+            margin-bottom: 1em;
+        }
+        .themed-content p { line-height: 1.75; margin-bottom: 1.25em; }
+        .themed-content a { color: var(--link-color); text-decoration: none; font-weight: 500; }
+        .themed-content a:hover { text-decoration: underline; }
+        .themed-content img {
+            max-width: 100%; height: auto; border-radius: 8px; margin: 1.5em 0; display: block;
+            position: relative; background-color: var(--placeholder-bg);
+            text-indent: 100%; white-space: nowrap; overflow: hidden; min-height: 100px;
+        }
+        .themed-content img::before {
+            content: '🖼️ 이미지 표시 불가 (경로 수정됨)'; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); color: var(--placeholder-text); font-size: 0.9rem;
+            font-weight: 500; text-align: center; width: 100%; display: none;
+        }
+        #html-view-after.themed-content img::before { display: block; }
+        .themed-content pre {
+            background-color: var(--pre-bg-color); color: var(--pre-text-color); padding: 1em;
+            border-radius: 8px; overflow-x: auto; font-family: 'Courier New', Courier, monospace;
+            margin-bottom: 1.5em;
+        }
+        .themed-content code:not(pre code) {
+            background-color: var(--code-bg-color); padding: 0.2em 0.4em;
+            border-radius: 4px; font-size: 0.9em;
+        }
+        .themed-content blockquote {
+            border-left: 4px solid var(--link-color); padding-left: 1em; margin-left: 0;
+            font-style: italic; color: var(--text-secondary);
+        }
+        .themed-content ul, .themed-content ol { padding-left: 1.5em; margin-bottom: 1em; }
+        .themed-content li { margin-bottom: 0.5em; line-height: 1.6; }
+    </style>
+    <script>
+        // Tailwind CSS JIT를 위한 설정
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Noto Sans KR', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="font-sans antialiased theme-light">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold">워드프레스 XML 변환기</h1>
+            <p class="text-lg mt-2">WordPress 데이터를 HTML과 Jekyll용 Markdown으로 변환합니다.</p>
+        </header>
+
+        <main class="rounded-xl shadow-lg p-6 md:p-8">
+            <!-- 파일 업로드 섹션 -->
+            <div id="upload-section" class="text-center border-2 border-dashed border-themed rounded-lg p-12 hover:border-blue-500 transition-colors">
+                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4V12a4 4 0 014-4h12l4 4h12a4 4 0 014 4z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium">WordPress XML 파일 선택</h3>
+                <p class="mt-1 text-sm">파일을 드래그하거나 클릭하여 업로드하세요.</p>
+                <input type="file" id="xml-file-input" class="sr-only" accept=".xml">
+            </div>
+            <div id="loading-spinner" class="hidden text-center my-8">
+                <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-blue-500 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p id="loading-text" class="mt-2 text-lg font-medium">데이터를 처리하는 중입니다...</p>
+            </div>
+
+            <!-- 결과 표시 섹션 -->
+            <div id="results-section" class="hidden mt-8">
+                <div class="sm:flex sm:items-center sm:justify-between">
+                    <h2 class="text-2xl font-bold">변환 결과</h2>
+                    <div class="mt-4 sm:mt-0 sm:ml-10 flex items-center space-x-4">
+                        <button id="download-zip-button" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                            전체 다운로드 (ZIP)
+                        </button>
+                        <label for="theme-selector" class="text-sm font-medium">HTML 테마:</label>
+                        <select id="theme-selector" class="rounded-md shadow-sm">
+                            <option value="light" selected>Light</option>
+                            <option value="dark">Dark</option>
+                            <option value="sepia">Sepia</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mt-6 border-b border-themed">
+                    <nav class="-mb-px flex space-x-6" id="result-tabs">
+                        <button data-tab="posts" class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600">콘텐츠</button>
+                        <button data-tab="media" class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">미디어 파일</button>
+                    </nav>
+                </div>
+
+                <!-- 게시물/페이지 목록 -->
+                <div id="posts-content" class="tab-content mt-6">
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+                        <div class="md:col-span-4">
+                            <!-- Post/Page Sub-tabs -->
+                            <div class="border-b border-themed">
+                                <nav class="-mb-px flex space-x-4" aria-label="Tabs">
+                                    <button id="posts-subtab-button" class="subtab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600">
+                                        게시물 (<span id="post-count">0</span>)
+                                    </button>
+                                    <button id="pages-subtab-button" class="subtab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                                        페이지 (<span id="page-count">0</span>)
+                                    </button>
+                                </nav>
+                            </div>
+                            
+                            <!-- Search -->
+                            <div class="mt-4 relative">
+                                <input type="search" id="search-input" placeholder="제목으로 검색..." class="w-full pl-10 pr-4 py-2 border rounded-md">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <!-- Lists container -->
+                            <div class="mt-4">
+                                <ul id="post-list" class="subtab-content max-h-[350px] overflow-y-auto border border-themed rounded-md"></ul>
+                                <ul id="page-list" class="subtab-content hidden max-h-[350px] overflow-y-auto border border-themed rounded-md"></ul>
+                            </div>
+
+                            <!-- Filters -->
+                            <div id="filters-container" class="mt-4 space-y-4">
+                                <div>
+                                    <h4 class="text-sm font-medium">연도</h4>
+                                    <div id="year-filter-container" class="flex flex-wrap gap-2 mt-2"></div>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-medium">카테고리</h4>
+                                    <div id="category-filter-container" class="flex flex-wrap gap-2 mt-2"></div>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-medium">태그</h4>
+                                    <div id="tag-filter-container" class="flex flex-wrap gap-2 mt-2"></div>
+                                </div>
+                            </div>
+
+                        </div>
+                        <div class="md:col-span-8">
+                            <div id="post-detail" class="hidden">
+                                <div class="flex justify-between items-start mb-4">
+                                    <h3 id="post-title" class="text-2xl font-bold w-full"></h3>
+                                </div>
+                                <div class="flex justify-between items-center border-b border-themed mb-4">
+                                    <div class="flex space-x-4">
+                                        <button data-view="html" class="view-button py-2 px-4 text-sm font-medium border-b-2 border-blue-500 text-blue-600">HTML 비교</button>
+                                        <button data-view="html-source" class="view-button py-2 px-4 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">HTML 소스</button>
+                                        <button data-view="markdown" class="view-button py-2 px-4 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Markdown 소스</button>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <button id="download-html-button" class="bg-gray-200 text-gray-800 text-sm font-medium py-1 px-3 rounded-md hover:bg-gray-300 transition-colors flex items-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                            </svg>
+                                            .html
+                                        </button>
+                                        <button id="download-md-button" class="bg-gray-200 text-gray-800 text-sm font-medium py-1 px-3 rounded-md hover:bg-gray-300 transition-colors flex items-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                            </svg>
+                                            .md
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="html-view-wrapper" class="view-content">
+                                    <div class="bg-blue-50 border-l-4 border-blue-400 p-3 text-sm text-blue-800 mb-4 rounded-r-md">
+                                        <p><strong>안내:</strong> '변환 후' 미리보기의 이미지는 경로가 로컬로 변경되었기 때문에 깨져 보이는 것이 정상입니다. 다운로드 후에는 올바르게 표시됩니다.</p>
+                                    </div>
+                                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                        <div>
+                                            <h4 class="text-lg font-semibold mb-2">변환 전 <span class="text-sm font-normal">(원본 링크)</span></h4>
+                                            <div id="html-view-before" class="p-4 border border-themed rounded-md themed-content h-[550px] overflow-y-auto"></div>
+                                        </div>
+                                        <div>
+                                            <h4 class="text-lg font-semibold mb-2">변환 후 <span class="text-sm font-normal">(로컬 경로)</span></h4>
+                                            <div id="html-view-after" class="p-4 border border-themed rounded-md themed-content h-[550px] overflow-y-auto"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="html-source-view" class="view-content hidden">
+                                    <pre class="bg-gray-800 text-white p-4 rounded-md overflow-x-auto text-sm h-[600px]"><code id="html-code"></code></pre>
+                                </div>
+                                <div id="markdown-view" class="view-content hidden">
+                                    <pre class="bg-gray-800 text-white p-4 rounded-md overflow-x-auto text-sm h-[600px]"><code id="markdown-code"></code></pre>
+                                </div>
+                            </div>
+                            <div id="post-placeholder" class="text-center p-10 border-2 border-dashed border-themed rounded-lg">
+                                <p>왼쪽 목록에서 항목을 선택하세요.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 미디어 파일 목록 -->
+                <div id="media-content" class="tab-content hidden mt-6">
+                    <h3 class="text-lg font-semibold mb-3">감지된 미디어 파일 (<span id="media-count">0</span>)</h3>
+                    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm text-yellow-700">
+                                    <strong>기술적 제약사항 안내:</strong> 브라우저의 보안 정책(CORS)으로 인해, 이 웹페이지에서 다른 웹사이트(예: 기존 워드프레스 사이트)의 이미지를 직접 다운로드할 수 없습니다.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-sm mb-2">
+                        '전체 다운로드 (ZIP)' 버튼을 클릭하면 생성되는 <code class="text-xs bg-gray-200 p-1 rounded">media_urls.txt</code> 파일에 아래 목록의 모든 URL이 저장됩니다.
+                    </p>
+                    <p class="text-sm mb-4">
+                        이 텍스트 파일을 사용하여 미디어 파일들을 수동으로 다운로드한 후, Jekyll 프로젝트의 <code class="text-xs bg-gray-200 p-1 rounded">/assets/media/</code> 폴더 안에 **원본과 동일한 하위 폴더 구조(예: /2023/05/)를 생성하여** 그 안에 옮겨주세요. 게시물 내의 링크는 이미 해당 전체 경로를 가리키도록 자동 수정되었습니다.
+                    </p>
+                    <ul id="media-list" class="list-disc list-inside space-y-2 text-sm bg-gray-50 p-4 rounded-md max-h-[500px] overflow-y-auto"></ul>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // UI Elements
+            const uploadSection = document.getElementById('upload-section');
+            const fileInput = document.getElementById('xml-file-input');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            const loadingText = document.getElementById('loading-text');
+            const resultsSection = document.getElementById('results-section');
+            
+            const postList = document.getElementById('post-list');
+            const pageList = document.getElementById('page-list');
+            const postCountSpan = document.getElementById('post-count');
+            const pageCountSpan = document.getElementById('page-count');
+            const mediaList = document.getElementById('media-list');
+            const mediaCount = document.getElementById('media-count');
+
+            const postDetail = document.getElementById('post-detail');
+            const postPlaceholder = document.getElementById('post-placeholder');
+            const postTitle = document.getElementById('post-title');
+            const htmlViewBefore = document.getElementById('html-view-before');
+            const htmlViewAfter = document.getElementById('html-view-after');
+            const htmlCode = document.getElementById('html-code');
+            const markdownCode = document.getElementById('markdown-code');
+
+            const downloadZipButton = document.getElementById('download-zip-button');
+            const downloadHtmlButton = document.getElementById('download-html-button');
+            const downloadMdButton = document.getElementById('download-md-button');
+
+            const searchInput = document.getElementById('search-input');
+            const themeSelector = document.getElementById('theme-selector');
+            const yearFilterContainer = document.getElementById('year-filter-container');
+            const categoryFilterContainer = document.getElementById('category-filter-container');
+            const tagFilterContainer = document.getElementById('tag-filter-container');
+            const filtersContainer = document.getElementById('filters-container');
+
+            // Data
+            let processedData = [];
+            let mediaUrls = new Set();
+            let currentPostIndex = -1;
+            const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+
+            // --- Event Listeners ---
+            uploadSection.addEventListener('click', () => fileInput.click());
+            uploadSection.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadSection.classList.add('border-blue-500', 'bg-blue-50');
+            });
+            uploadSection.addEventListener('dragleave', () => {
+                uploadSection.classList.remove('border-blue-500', 'bg-blue-50');
+            });
+            uploadSection.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadSection.classList.remove('border-blue-500', 'bg-blue-50');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) handleFile(files[0]);
+            });
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) handleFile(e.target.files[0]);
+            });
+            downloadZipButton.addEventListener('click', downloadAllAsZip);
+            downloadHtmlButton.addEventListener('click', downloadCurrentHtml);
+            downloadMdButton.addEventListener('click', downloadCurrentMarkdown);
+            searchInput.addEventListener('input', applyFiltersAndRender);
+
+            function handleFile(file) {
+                if (!file.name.endsWith('.xml')) {
+                    alert('WordPress에서 내보낸 XML 파일을 선택해주세요.');
+                    return;
+                }
+                loadingText.textContent = '데이터를 처리하는 중입니다...';
+                uploadSection.classList.add('hidden');
+                loadingSpinner.classList.remove('hidden');
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    setTimeout(() => {
+                        try {
+                            processXml(e.target.result);
+                        } catch (error) {
+                            console.error("XML 처리 중 오류 발생:", error);
+                            alert("XML 파일을 처리하는 중 오류가 발생했습니다. 파일 형식을 확인해주세요.");
+                            resetUI();
+                        }
+                    }, 50);
+                };
+                reader.onerror = () => {
+                    alert("파일을 읽는 중 오류가 발생했습니다.");
+                    resetUI();
+                };
+                reader.readAsText(file);
+            }
+
+            function resetUI() {
+                uploadSection.classList.remove('hidden');
+                loadingSpinner.classList.add('hidden');
+                resultsSection.classList.add('hidden');
+                processedData = [];
+                mediaUrls = new Set();
+                postList.innerHTML = '';
+                pageList.innerHTML = '';
+                mediaList.innerHTML = '';
+                postDetail.classList.add('hidden');
+                postPlaceholder.classList.remove('hidden');
+            }
+
+            function processXml(xmlString) {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+                
+                if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+                    throw new Error("Invalid XML format");
+                }
+
+                const items = xmlDoc.getElementsByTagName('item');
+                const uniqueCategories = new Set();
+                const uniqueTags = new Set();
+                const uniqueYears = new Set();
+                processedData = [];
+                mediaUrls = new Set();
+                
+                const attachmentMap = new Map();
+                for (const item of items) {
+                    const postType = item.getElementsByTagName('wp:post_type')[0]?.textContent;
+                    if (postType === 'attachment') {
+                        const postId = item.getElementsByTagName('wp:post_id')[0]?.textContent;
+                        const attachmentUrl = item.getElementsByTagName('wp:attachment_url')[0]?.textContent;
+                        if (postId && attachmentUrl) {
+                            attachmentMap.set(postId, attachmentUrl);
+                        }
+                    }
+                }
+
+                for (const item of items) {
+                    const postType = item.getElementsByTagName('wp:post_type')[0]?.textContent;
+                    if (postType === 'post' || postType === 'page') {
+                        const title = item.getElementsByTagName('title')[0]?.textContent || '제목 없음';
+                        const originalContent = item.getElementsByTagName('content:encoded')[0]?.textContent || '';
+                        
+                        const wpUploadUrlRegex = /(https?:\/\/[^"'\s<>()]+?\/wp-content\/uploads\/)([\w\/-]+\.[\w\d%.-]+)/g;
+
+                        // Create a temporary div to parse and manipulate HTML content
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = originalContent;
+
+                        // Find all images, replace src, and set default alt text
+                        tempDiv.querySelectorAll('img').forEach(img => {
+                            const originalSrc = img.getAttribute('src');
+                            if (originalSrc && originalSrc.includes('/wp-content/uploads/')) {
+                                mediaUrls.add(originalSrc);
+                                const newSrc = originalSrc.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
+                                img.setAttribute('src', newSrc);
+                            }
+                            const altText = img.getAttribute('alt');
+                            if (altText === null || altText.trim() === '') {
+                                img.setAttribute('alt', '본문 이미지');
+                            }
+                        });
+
+                        // Find all links to media files and replace href
+                        tempDiv.querySelectorAll('a').forEach(link => {
+                            const originalHref = link.getAttribute('href');
+                            if (originalHref && originalHref.includes('/wp-content/uploads/')) {
+                                mediaUrls.add(originalHref);
+                                const newHref = originalHref.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
+                                link.setAttribute('href', newHref);
+                            }
+                        });
+
+                        let convertedContent = tempDiv.innerHTML;
+                        
+                        const categories = Array.from(item.getElementsByTagName('category'))
+                            .filter(cat => cat.getAttribute('domain') === 'category')
+                            .map(cat => cat.textContent);
+                        
+                        const tags = Array.from(item.getElementsByTagName('category'))
+                            .filter(cat => cat.getAttribute('domain') === 'post_tag')
+                            .map(cat => cat.textContent);
+                        
+                        const pubDate = item.getElementsByTagName('pubDate')[0]?.textContent;
+                        const dateObj = new Date(pubDate);
+                        const date = dateObj.toISOString().split('T')[0];
+                        const year = dateObj.getFullYear().toString();
+
+                        categories.forEach(cat => uniqueCategories.add(cat));
+                        tags.forEach(tag => uniqueTags.add(tag));
+                        if(postType === 'post') uniqueYears.add(year);
+                        
+                        let frontMatter = '---\n';
+                        frontMatter += `layout: ${postType}\n`;
+                        frontMatter += `title: "${title.replace(/"/g, '\\"')}"\n`;
+                        frontMatter += `date: ${date}\n`;
+                        
+                        let originalFeaturedImage = null;
+                        let featuredImagePath = null;
+                        const postmeta = item.getElementsByTagName('wp:postmeta');
+                        for (const meta of postmeta) {
+                            const metaKey = meta.getElementsByTagName('wp:meta_key')[0]?.textContent;
+                            if (metaKey === '_thumbnail_id') {
+                                const thumbnailId = meta.getElementsByTagName('wp:meta_value')[0]?.textContent;
+                                if (thumbnailId && attachmentMap.has(thumbnailId)) {
+                                    const imageUrl = attachmentMap.get(thumbnailId);
+                                    originalFeaturedImage = imageUrl;
+                                    mediaUrls.add(imageUrl);
+                                    featuredImagePath = imageUrl.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
+                                    frontMatter += `image: "${featuredImagePath}"\n`;
+                                }
+                                break; 
+                            }
+                        }
+
+                        if (categories.length > 0) {
+                            frontMatter += `categories:\n${categories.map(c => `  - "${c.replace(/"/g, '\\"')}"`).join('\n')}\n`;
+                        }
+                        if (tags.length > 0) {
+                            frontMatter += `tags:\n${tags.map(t => `  - "${t.replace(/"/g, '\\"')}"`).join('\n')}\n`;
+                        }
+                        frontMatter += '---\n\n';
+                        
+                        const finalHtml = convertedContent.replace(/<!-- \/?wp:.*? -->/g, '').trim();
+                        const markdownContent = turndownService.turndown(finalHtml);
+
+                        processedData.push({
+                            title,
+                            originalHtml: originalContent,
+                            html: finalHtml,
+                            markdown: frontMatter + markdownContent,
+                            type: postType,
+                            categories,
+                            tags,
+                            date,
+                            year,
+                            originalFeaturedImage,
+                            featuredImage: featuredImagePath
+                        });
+                    } else if (postType === 'attachment') {
+                        const attachmentUrl = item.getElementsByTagName('wp:attachment_url')[0]?.textContent;
+                        if(attachmentUrl) mediaUrls.add(attachmentUrl);
+                    }
+                }
+
+                setupInitialView(Array.from(uniqueCategories), Array.from(uniqueTags), Array.from(uniqueYears));
+            }
+
+            function setupInitialView(categories, tags, years) {
+                loadingSpinner.classList.add('hidden');
+                resultsSection.classList.remove('hidden');
+
+                populateFilterContainer(yearFilterContainer, years.sort().reverse(), '연도');
+                populateFilterContainer(categoryFilterContainer, categories, '카테고리');
+                populateFilterContainer(tagFilterContainer, tags, '태그');
+
+                mediaList.innerHTML = '';
+                Array.from(mediaUrls).forEach(url => {
+                    const li = document.createElement('li');
+                    li.textContent = url;
+                    mediaList.appendChild(li);
+                });
+                mediaCount.textContent = mediaUrls.size;
+
+                applyFiltersAndRender();
+                document.getElementById('posts-subtab-button').click();
+            }
+
+            function populateFilterContainer(container, items, filterName) {
+                container.innerHTML = '';
+                const allButton = document.createElement('button');
+                allButton.className = 'filter-button bg-blue-500 text-white px-3 py-1 text-sm rounded-full transition-colors';
+                allButton.textContent = `모든 ${filterName}`;
+                allButton.dataset.value = 'all';
+                container.appendChild(allButton);
+
+                items.sort().forEach(item => {
+                    const itemButton = document.createElement('button');
+                    itemButton.className = 'filter-button bg-gray-200 text-gray-700 px-3 py-1 text-sm rounded-full hover:bg-gray-300 transition-colors';
+                    itemButton.textContent = item;
+                    itemButton.dataset.value = item;
+                    container.appendChild(itemButton);
+                });
+
+                container.querySelectorAll('.filter-button').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        container.querySelectorAll('.filter-button').forEach(btn => {
+                            btn.classList.remove('bg-blue-500', 'text-white');
+                            btn.classList.add('bg-gray-200', 'text-gray-700', 'hover:bg-gray-300');
+                        });
+                        e.currentTarget.classList.add('bg-blue-500', 'text-white');
+                        e.currentTarget.classList.remove('bg-gray-200', 'text-gray-700', 'hover:bg-gray-300');
+                        applyFiltersAndRender();
+                    });
+                });
+            }
+
+            function applyFiltersAndRender() {
+                const searchTerm = searchInput.value.toLowerCase();
+                
+                const selectedYearBtn = yearFilterContainer.querySelector('.bg-blue-500');
+                const selectedCategoryBtn = categoryFilterContainer.querySelector('.bg-blue-500');
+                const selectedTagBtn = tagFilterContainer.querySelector('.bg-blue-500');
+                const selectedYear = selectedYearBtn ? selectedYearBtn.dataset.value : 'all';
+                const selectedCategory = selectedCategoryBtn ? selectedCategoryBtn.dataset.value : 'all';
+                const selectedTag = selectedTagBtn ? selectedTagBtn.dataset.value : 'all';
+
+                let filteredPosts = processedData.filter(p => p.type === 'post');
+                if (selectedYear !== 'all') {
+                    filteredPosts = filteredPosts.filter(p => p.year === selectedYear);
+                }
+                if (selectedCategory !== 'all') {
+                    filteredPosts = filteredPosts.filter(p => p.categories.includes(selectedCategory));
+                }
+                if (selectedTag !== 'all') {
+                    filteredPosts = filteredPosts.filter(p => p.tags.includes(selectedTag));
+                }
+                if (searchTerm) {
+                    filteredPosts = filteredPosts.filter(p => p.title.toLowerCase().includes(searchTerm));
+                }
+                populateList(postList, filteredPosts);
+                postCountSpan.textContent = filteredPosts.length;
+
+                let filteredPages = processedData.filter(p => p.type === 'page');
+                if (searchTerm) {
+                    filteredPages = filteredPages.filter(p => p.title.toLowerCase().includes(searchTerm));
+                }
+                populateList(pageList, filteredPages);
+                pageCountSpan.textContent = filteredPages.length;
+                
+                postDetail.classList.add('hidden');
+                postPlaceholder.classList.remove('hidden');
+            }
+
+            function populateList(listElement, items) {
+                listElement.innerHTML = '';
+                items.forEach(item => {
+                    const index = processedData.indexOf(item);
+                    const li = document.createElement('li');
+                    const button = document.createElement('button');
+                    button.dataset.index = index;
+                    button.className = "item-button text-left w-full p-3 hover:bg-gray-100 focus:outline-none focus:bg-blue-100 transition-colors";
+                    button.textContent = item.title;
+
+                    if (index === currentPostIndex) {
+                        button.classList.add('bg-blue-100', 'font-semibold');
+                    }
+
+                    li.appendChild(button);
+                    li.classList.add('border-b', 'border-gray-200');
+                    listElement.appendChild(li);
+                });
+                if (listElement.lastChild) {
+                    listElement.lastChild.classList.remove('border-b');
+                }
+                
+                listElement.querySelectorAll('.item-button').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        document.querySelectorAll('.item-button').forEach(btn => btn.classList.remove('bg-blue-100', 'font-semibold'));
+                        e.currentTarget.classList.add('bg-blue-100', 'font-semibold');
+                        showPostDetail(e.currentTarget.dataset.index);
+                    });
+                });
+            }
+            
+            function showPostDetail(index) {
+                currentPostIndex = parseInt(index, 10);
+                const item = processedData[currentPostIndex];
+                postPlaceholder.classList.add('hidden');
+                postDetail.classList.remove('hidden');
+                postTitle.textContent = item.title;
+
+                let beforeHtml = item.originalHtml;
+                if(item.originalFeaturedImage) {
+                    beforeHtml = `<figure class="wp-block-image"><img src="${item.originalFeaturedImage}" alt="특성 이미지"></figure>\n` + beforeHtml;
+                }
+                htmlViewBefore.innerHTML = beforeHtml;
+                
+                let afterHtml = item.html;
+                if(item.featuredImage) {
+                    afterHtml = `<figure class="wp-block-image"><img src="${item.featuredImage}" alt="특성 이미지"></figure>\n` + afterHtml;
+                }
+                htmlViewAfter.innerHTML = afterHtml;
+
+                htmlCode.textContent = afterHtml;
+                markdownCode.textContent = item.markdown;
+                switchView('html');
+            }
+
+            function sanitizeFilename(name) {
+                return name.replace(/[\/\\?%*:|"<>]/g, '-').replace(/\s+/g, '-');
+            }
+            
+            function downloadCurrentHtml() {
+                if (currentPostIndex < 0) return;
+                const item = processedData[currentPostIndex];
+                
+                let finalHtml = item.html;
+                if(item.featuredImage) {
+                    finalHtml = `<figure class="wp-block-image"><img src="${item.featuredImage}" alt="특성 이미지"></figure>\n\n` + finalHtml;
+                }
+
+                const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${item.date}-${sanitizeFilename(item.title)}.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            function downloadCurrentMarkdown() {
+                if (currentPostIndex < 0) return;
+                const item = processedData[currentPostIndex];
+                const blob = new Blob([item.markdown], { type: 'text/markdown;charset=utf-8' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${item.date}-${sanitizeFilename(item.title)}.md`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            function downloadAllAsZip() {
+                loadingText.textContent = 'ZIP 파일을 생성 중입니다...';
+                loadingSpinner.classList.remove('hidden');
+                resultsSection.classList.add('hidden');
+
+                setTimeout(() => {
+                    const zip = new JSZip();
+                    const postsFolder = zip.folder("_posts");
+                    const pagesFolder = zip.folder("pages");
+                    const htmlPostsFolder = zip.folder("html_posts");
+                    const htmlPagesFolder = zip.folder("html_pages");
+
+                    processedData.forEach(item => {
+                        const sanitizedTitle = sanitizeFilename(item.title);
+                        let finalHtml = item.html;
+                        if(item.featuredImage) {
+                            finalHtml = `<figure class="wp-block-image"><img src="${item.featuredImage}" alt="특성 이미지"></figure>\n\n` + finalHtml;
+                        }
+
+                        if (item.type === 'post') {
+                            postsFolder.file(`${item.date}-${sanitizedTitle}.md`, item.markdown);
+                            htmlPostsFolder.file(`${item.date}-${sanitizedTitle}.html`, finalHtml);
+                        } else if (item.type === 'page') {
+                            pagesFolder.file(`${sanitizedTitle}.md`, item.markdown);
+                            htmlPagesFolder.file(`${sanitizedTitle}.html`, finalHtml);
+                        }
+                    });
+
+                    const mediaContent = Array.from(mediaUrls).join('\n');
+                    zip.file("media_urls.txt", mediaContent);
+                    
+                    const readmeContent = `
+WordPress Export Files
+======================
+
+이 ZIP 파일에는 변환된 게시물, 페이지, 그리고 미디어 파일 다운로드 스크립트가 포함되어 있습니다.
+
+폴더 구조:
+- _posts/       : Jekyll용 마크다운 게시물
+- pages/        : Jekyll용 마크다운 페이지
+- html_posts/   : 변환된 HTML 게시물
+- html_pages/   : 변환된 HTML 페이지
+- media_urls.txt: 모든 미디어 파일의 원본 URL 목록
+- download_media.sh: 미디어 파일 자동 다운로드 스크립트 (for macOS/Linux)
+
+**미디어 파일 다운로드 방법 (macOS/Linux):**
+
+1. 터미널을 엽니다.
+2. 이 파일들이 있는 폴더로 이동합니다. (예: cd ~/Downloads/wordpress-export)
+3. 다음 명령어를 실행하여 스크립트에 실행 권한을 부여합니다:
+   chmod +x download_media.sh
+4. 스크립트를 실행합니다:
+   ./download_media.sh
+
+스크립트가 실행되면 'assets/media' 폴더가 생성되고, 그 안에 원본과 동일한 폴더 구조로 모든 미디어 파일이 다운로드됩니다.
+`;
+                    zip.file("README.txt", readmeContent.trim());
+
+                    const scriptContent = `
+#!/bin/bash
+echo "미디어 파일 다운로드를 시작합니다..."
+mkdir -p assets/media
+
+# media_urls.txt 파일에서 한 줄씩 URL을 읽어옵니다.
+while IFS= read -r url; do
+  # URL에서 /wp-content/uploads/ 이후의 경로를 추출합니다.
+  path=$(echo "$url" | sed 's|.*/wp-content/uploads/||')
+  
+  # 파일이 저장될 디렉토리 경로를 만듭니다.
+  dir="assets/media/$(dirname "$path")"
+  
+  # 디렉토리가 존재하지 않으면 생성합니다.
+  mkdir -p "$dir"
+  
+  # 파일을 다운로드합니다.
+  echo "Downloading $url to $dir/$(basename "$path")"
+  curl -s -o "$dir/$(basename "$path")" "$url"
+done < media_urls.txt
+
+echo "다운로드가 완료되었습니다."
+`;
+                    zip.file("download_media.sh", scriptContent.trim(), { unixPermissions: "755" });
+
+
+                    zip.generateAsync({ type: "blob" })
+                        .then(function(content) {
+                            const a = document.createElement('a');
+                            a.href = URL.createObjectURL(content);
+                            a.download = 'wordpress-export.zip';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            loadingSpinner.classList.add('hidden');
+                            resultsSection.classList.remove('hidden');
+                        });
+                }, 50);
+            }
+
+            // --- Tab and View Switching Logic ---
+            document.querySelectorAll('.tab-button').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-button').forEach(t => t.classList.remove('border-blue-500', 'text-blue-600'));
+                    tab.classList.add('border-blue-500', 'text-blue-600');
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('hidden', c.id !== `${tab.dataset.tab}-content`));
+                });
+            });
+
+            document.querySelectorAll('.subtab-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    const isPostsTab = button.id === 'posts-subtab-button';
+                    filtersContainer.classList.toggle('hidden', !isPostsTab);
+
+                    document.querySelectorAll('.subtab-button').forEach(btn => {
+                        btn.classList.remove('border-blue-500', 'text-blue-600');
+                        btn.classList.add('border-transparent', 'text-gray-500');
+                    });
+                    button.classList.add('border-blue-500', 'text-blue-600');
+                    
+                    document.getElementById('post-list').classList.toggle('hidden', !isPostsTab);
+                    document.getElementById('page-list').classList.toggle('hidden', isPostsTab);
+                    
+                    searchInput.classList.remove('hidden'); 
+                });
+            });
+
+            const viewButtons = document.querySelectorAll('.view-button');
+            function switchView(targetView) {
+                viewButtons.forEach(b => {
+                    b.classList.toggle('border-blue-500', b.dataset.view === targetView);
+                    b.classList.toggle('text-blue-600', b.dataset.view === targetView);
+                    b.classList.toggle('border-transparent', b.dataset.view !== targetView);
+                    b.classList.toggle('text-gray-500', b.dataset.view !== targetView);
+                });
+                document.querySelectorAll('.view-content').forEach(c => {
+                    if (c.id === 'html-view-wrapper') {
+                        c.classList.toggle('hidden', targetView !== 'html');
+                    } else {
+                        c.classList.toggle('hidden', c.id !== `${targetView}-view`);
+                    }
+                });
+            }
+
+            viewButtons.forEach(button => button.addEventListener('click', (e) => switchView(e.currentTarget.dataset.view)));
+            
+            themeSelector.addEventListener('change', (e) => {
+                const selectedTheme = e.target.value;
+                document.body.className = `font-sans antialiased theme-${selectedTheme}`;
+            });
+
+            // --- Synchronized Scrolling ---
+            let activeScroller = null;
+            htmlViewBefore.addEventListener('mouseenter', () => activeScroller = 'before');
+            htmlViewAfter.addEventListener('mouseenter', () => activeScroller = 'after');
+
+            htmlViewBefore.addEventListener('scroll', () => {
+                if (activeScroller === 'before') {
+                    htmlViewAfter.scrollTop = htmlViewBefore.scrollTop;
+                }
+            });
+            htmlViewAfter.addEventListener('scroll', () => {
+                if (activeScroller === 'after') {
+                    htmlViewBefore.scrollTop = htmlViewAfter.scrollTop;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
