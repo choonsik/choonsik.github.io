@@ -471,7 +471,7 @@
                         const title = item.getElementsByTagName('title')[0]?.textContent || '제목 없음';
                         const originalContent = item.getElementsByTagName('content:encoded')[0]?.textContent || '';
                         
-                        const wpUploadUrlRegex = /(https?:\/\/[^"'\s<>()]+?\/wp-content\/uploads\/)([\w\/-]+\.[\w\d%.-]+)/g;
+                        const wpUploadUrlRegex = /(https?:\/\/[^"'\s<>()]+?\/wp-content\/uploads\/)([^"'\s?<>]+)/g;
 
                         // Create a temporary div to parse and manipulate HTML content
                         const tempDiv = document.createElement('div');
@@ -481,8 +481,9 @@
                         tempDiv.querySelectorAll('img').forEach(img => {
                             const originalSrc = img.getAttribute('src');
                             if (originalSrc && originalSrc.includes('/wp-content/uploads/')) {
-                                mediaUrls.add(originalSrc);
-                                const newSrc = originalSrc.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
+                                const cleanSrc = originalSrc.split('?')[0];
+                                mediaUrls.add(cleanSrc);
+                                const newSrc = cleanSrc.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
                                 img.setAttribute('src', newSrc);
                             }
                             const altText = img.getAttribute('alt');
@@ -495,8 +496,9 @@
                         tempDiv.querySelectorAll('a').forEach(link => {
                             const originalHref = link.getAttribute('href');
                             if (originalHref && originalHref.includes('/wp-content/uploads/')) {
-                                mediaUrls.add(originalHref);
-                                const newHref = originalHref.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
+                                const cleanHref = originalHref.split('?')[0];
+                                mediaUrls.add(cleanHref);
+                                const newHref = cleanHref.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
                                 link.setAttribute('href', newHref);
                             }
                         });
@@ -534,9 +536,10 @@
                                 const thumbnailId = meta.getElementsByTagName('wp:meta_value')[0]?.textContent;
                                 if (thumbnailId && attachmentMap.has(thumbnailId)) {
                                     const imageUrl = attachmentMap.get(thumbnailId);
+                                    const cleanImageUrl = imageUrl.split('?')[0];
                                     originalFeaturedImage = imageUrl;
-                                    mediaUrls.add(imageUrl);
-                                    featuredImagePath = imageUrl.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
+                                    mediaUrls.add(cleanImageUrl);
+                                    featuredImagePath = cleanImageUrl.replace(wpUploadUrlRegex, (fullUrl, baseUrl, subPath) => `../assets/media/${subPath}`);
                                     frontMatter += `image: "${featuredImagePath}"\n`;
                                 }
                                 break; 
@@ -569,7 +572,7 @@
                         });
                     } else if (postType === 'attachment') {
                         const attachmentUrl = item.getElementsByTagName('wp:attachment_url')[0]?.textContent;
-                        if(attachmentUrl) mediaUrls.add(attachmentUrl);
+                        if(attachmentUrl) mediaUrls.add(attachmentUrl.split('?')[0]);
                     }
                 }
 
