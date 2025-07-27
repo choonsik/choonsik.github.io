@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress XML을 HTML 블로그로 변환</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .file-input-label {
+            transition: all 0.2s ease-in-out;
+        }
+        .file-input-label:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .action-btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        #error-box {
+            transition: opacity 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <div class="container mx-auto px-4 py-8 md:py-16">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">WordPress XML 변환기</h1>
+            <p class="mt-4 text-lg text-gray-600">WordPress export XML 파일을 세련된 HTML 블로그로 변환하세요.</p>
+        </header>
+
+        <main class="max-w-3xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+            <div id="error-box" class="hidden mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg"></div>
+            
+            <div class="mb-8">
+                <label class="block text-lg font-semibold mb-3 text-gray-700">1. WordPress XML 파일 업로드</label>
+                <label for="xmlFile" class="file-input-label flex justify-center w-full h-32 px-4 transition bg-white border-2 border-gray-300 border-dashed rounded-md appearance-none cursor-pointer hover:border-blue-500 focus:outline-none">
+                    <span class="flex items-center space-x-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span id="file-name" class="font-medium text-gray-600">
+                            여기를 클릭하여 파일을 선택하거나<br> 파일을 드래그 앤 드롭하세요.
+                        </span>
+                    </span>
+                    <input type="file" id="xmlFile" class="hidden" accept=".xml">
+                </label>
+            </div>
+
+            <div class="mb-8">
+                <label class="block text-lg font-semibold mb-3 text-gray-700">2. 블로그 정보 입력</label>
+                <input type="text" id="blogTitle" placeholder="블로그 제목 (예: 나의 개발 일지)" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="text" id="blogAuthor" placeholder="작성자 이름 (예: 홍길동)" class="mt-2 w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <div class="mb-8">
+                <label for="font-selector" class="block text-lg font-semibold mb-3 text-gray-700">3. 폰트 선택</label>
+                <select id="font-selector" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="Noto Sans KR">Noto Sans KR (기본)</option>
+                    <option value="IBM Plex Sans KR">IBM Plex Sans KR</option>
+                    <option value="Gothic A1">Gothic A1</option>
+                    <option value="Nanum Gothic">Nanum Gothic</option>
+                </select>
+            </div>
+
+            <div class="text-center">
+                <button id="convertBtn" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition duration-300 disabled:bg-gray-400">
+                    변환하기
+                </button>
+            </div>
+
+            <div id="results" class="mt-12 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">🎉 변환 완료!</h2>
+                    <button id="downloadAllBtn" class="action-btn bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">
+                        모두 다운로드 (.zip)
+                    </button>
+                </div>
+                <p id="conversion-summary" class="text-center text-gray-600 mb-6 bg-gray-100 p-3 rounded-md"></p>
+                <div id="download-container" class="space-y-3">
+                    <!-- 다운로드 링크가 여기에 추가됩니다. -->
+                </div>
+            </div>
+        </main>
+
+        <footer class="text-center mt-12 text-gray-500">
+            <p>&copy; 2025. Gemini가 생성한 도구.</p>
+        </footer>
+    </div>
+
+    <script>
+        const xmlFileInput = document.getElementById('xmlFile');
+        const fileNameDisplay = document.getElementById('file-name');
+        const convertBtn = document.getElementById('convertBtn');
+        const resultsDiv = document.getElementById('results');
+        const downloadContainer = document.getElementById('download-container');
+        const blogTitleInput = document.getElementById('blogTitle');
+        const blogAuthorInput = document.getElementById('blogAuthor');
+        const errorBox = document.getElementById('error-box');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        const fontSelector = document.getElementById('font-selector');
+        const conversionSummary = document.getElementById('conversion-summary');
+
+        let fileContent = '';
+        let generatedFiles = [];
+
+        const fonts = {
+          'Noto Sans KR': {
+            url: 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap',
+            family: "'Noto Sans KR', sans-serif"
+          },
+          'IBM Plex Sans KR': {
+            url: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap',
+            family: "'IBM Plex Sans KR', sans-serif"
+          },
+          'Gothic A1': {
+            url: 'https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;600;700&display=swap',
+            family: "'Gothic A1', sans-serif"
+          },
+          'Nanum Gothic': {
+            url: 'https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap',
+            family: "'Nanum Gothic', sans-serif"
+          }
+        };
+
+        function displayError(message) {
+            errorBox.textContent = message;
+            errorBox.classList.remove('hidden');
+        }
+
+        function clearError() {
+            errorBox.textContent = '';
+            errorBox.classList.add('hidden');
+        }
+
+        xmlFileInput.addEventListener('change', () => {
+            if (xmlFileInput.files.length > 0) {
+                const file = xmlFileInput.files[0];
+                fileNameDisplay.textContent = `선택된 파일: ${file.name}`;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    fileContent = e.target.result;
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        const dropZone = xmlFileInput.parentElement;
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-blue-500'); });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('border-blue-500'); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-500');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                xmlFileInput.files = files;
+                xmlFileInput.dispatchEvent(new Event('change'));
+            }
+        });
+
+        const formatDateForFilename = (dateStr) => {
+            const date = new Date(dateStr);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        convertBtn.addEventListener('click', () => {
+            clearError();
+            resultsDiv.classList.add('hidden');
+            downloadContainer.innerHTML = '';
+            generatedFiles = [];
+
+            if (!fileContent) {
+                displayError('XML 파일을 먼저 업로드해주세요.');
+                return;
+            }
+            if (!blogTitleInput.value) {
+                displayError('블로그 제목을 입력해주세요.');
+                return;
+            }
+
+            convertBtn.disabled = true;
+            convertBtn.textContent = '변환 중...';
+
+            setTimeout(() => {
+                try {
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(fileContent, "text/xml");
+                    
+                    const parseError = xmlDoc.getElementsByTagName("parsererror");
+                    if (parseError.length) {
+                        throw new Error("XML 파일 형식이 잘못되었습니다. 파일을 다시 확인해주세요.");
+                    }
+
+                    const attachmentMap = new Map();
+                    const allItems = xmlDoc.getElementsByTagName('item');
+                    for (const item of allItems) {
+                        const postType = item.getElementsByTagName('wp:post_type')[0]?.textContent;
+                        if (postType === 'attachment') {
+                            const postId = item.getElementsByTagName('wp:post_id')[0]?.textContent;
+                            const attachmentUrl = item.getElementsByTagName('wp:attachment_url')[0]?.textContent;
+                            if (postId && attachmentUrl) {
+                                attachmentMap.set(postId, attachmentUrl);
+                            }
+                        }
+                    }
+
+                    const posts = [];
+                    const pages = [];
+                    for (const item of allItems) {
+                        const postType = item.getElementsByTagName('wp:post_type')[0]?.textContent;
+                        const status = item.getElementsByTagName('wp:status')[0]?.textContent;
+
+                        if (status !== 'publish') continue;
+
+                        if (postType === 'post') {
+                            const title = item.getElementsByTagName('title')[0]?.textContent || '제목 없음';
+                            const pubDate = new Date(item.getElementsByTagName('pubDate')[0]?.textContent);
+                            const creator = item.getElementsByTagName('dc:creator')[0]?.textContent || blogAuthorInput.value || '익명';
+                            const content = item.getElementsByTagName('content:encoded')[0]?.textContent || '';
+                            const postNameEncoded = item.getElementsByTagName('wp:post_name')[0]?.textContent || `post-${Date.now() + posts.length}`;
+                            const postName = decodeURIComponent(postNameEncoded);
+                            
+                            let featuredImage = '';
+                            const postMeta = item.getElementsByTagName('wp:postmeta');
+                            for (const meta of postMeta) {
+                                const metaKey = meta.getElementsByTagName('wp:meta_key')[0]?.textContent;
+                                if (metaKey === '_thumbnail_id') {
+                                    const thumbnailId = meta.getElementsByTagName('wp:meta_value')[0]?.textContent;
+                                    if (attachmentMap.has(thumbnailId)) {
+                                        featuredImage = attachmentMap.get(thumbnailId);
+                                    }
+                                    break;
+                                }
+                            }
+
+                            const categories = [];
+                            const tags = [];
+                            const categoryNodes = item.getElementsByTagName('category');
+                            for (const node of categoryNodes) {
+                                const domain = node.getAttribute('domain');
+                                const nicename = node.getAttribute('nicename');
+                                const value = node.textContent;
+
+                                if (domain === 'category') {
+                                    categories.push({ name: value, slug: nicename });
+                                } else if (domain === 'post_tag') {
+                                    tags.push({ name: value, slug: nicename });
+                                }
+                            }
+                            posts.push({ title, pubDate, creator, content, postName, categories, tags, featuredImage });
+                        } else if (postType === 'page') {
+                            const title = item.getElementsByTagName('title')[0]?.textContent || '제목 없음';
+                            const content = item.getElementsByTagName('content:encoded')[0]?.textContent || '';
+                            const postNameEncoded = item.getElementsByTagName('wp:post_name')[0]?.textContent || `page-${pages.length}`;
+                            const postName = decodeURIComponent(postNameEncoded);
+                            const menuOrder = parseInt(item.getElementsByTagName('wp:menu_order')[0]?.textContent || '0', 10);
+                            pages.push({ title, content, postName, menuOrder });
+                        }
+                    }
+                    
+                    if (posts.length === 0 && pages.length === 0) {
+                        throw new Error("변환할 게시물이나 페이지를 찾지 못했습니다. XML 파일에 '발행(publish)' 상태인 콘텐츠가 있는지 확인해주세요.");
+                    }
+
+                    posts.sort((a, b) => b.pubDate - a.pubDate);
+                    pages.sort((a, b) => a.menuOrder - b.menuOrder);
+
+                    const selectedFont = fonts[fontSelector.value];
+                    generateHtmlFiles(posts, pages, selectedFont);
+                    renderFileList();
+                    
+                    conversionSummary.textContent = `페이지 변환: ${pages.length}개, 포스트 변환: ${posts.length}개`;
+                    resultsDiv.classList.remove('hidden');
+                    convertBtn.textContent = '변환 완료!';
+                    convertBtn.disabled = false;
+
+                } catch (error) {
+                    console.error("XML 파싱 또는 변환 중 오류 발생:", error);
+                    displayError(error.message || "알 수 없는 오류가 발생했습니다. 콘솔을 확인해주세요.");
+                    convertBtn.disabled = false;
+                    convertBtn.textContent = '변환하기';
+                }
+            }, 10);
+        });
+
+        function generateHtmlFiles(posts, pages, font) {
+            const indexHtml = createIndexHtml(posts, pages, font);
+            generatedFiles.push({
+                fileName: 'index.html',
+                content: indexHtml,
+                description: '블로그 메인 페이지'
+            });
+
+            posts.forEach(post => {
+                const datePrefix = formatDateForFilename(post.pubDate);
+                const postHtml = createPostHtml(post, pages, font);
+                const fileName = `posts/${datePrefix}-${post.postName}.html`;
+                generatedFiles.push({
+                    fileName,
+                    content: postHtml,
+                    description: `게시글: ${post.title}`
+                });
+            });
+
+            pages.forEach(page => {
+                const pageHtml = createPageHtml(page, pages, font);
+                const fileName = `pages/${page.postName}.html`;
+                generatedFiles.push({
+                    fileName,
+                    content: pageHtml,
+                    description: `페이지: ${page.title}`
+                });
+            });
+        }
+
+        function renderFileList() {
+            downloadContainer.innerHTML = '';
+            generatedFiles.forEach((file, index) => {
+                const fileItem = createFileListItem(file, index);
+                downloadContainer.appendChild(fileItem);
+            });
+        }
+
+        function createFileListItem(file, index) {
+            const blob = new Blob([file.content], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            
+            const itemWrapper = document.createElement('div');
+            itemWrapper.className = 'flex items-center justify-between bg-gray-100 p-3 rounded-lg';
+
+            const textWrapper = document.createElement('div');
+            textWrapper.className = 'flex-grow mr-4 overflow-hidden';
+            
+            const nameEl = document.createElement('p');
+            nameEl.className = 'font-semibold text-gray-800 truncate';
+            nameEl.textContent = file.fileName;
+            
+            const descEl = document.createElement('p');
+            descEl.className = 'text-sm text-gray-600 truncate';
+            descEl.textContent = file.description;
+
+            textWrapper.appendChild(nameEl);
+            textWrapper.appendChild(descEl);
+
+            const buttonsWrapper = document.createElement('div');
+            buttonsWrapper.className = 'flex-shrink-0 flex items-center space-x-2';
+
+            const previewBtn = document.createElement('button');
+            previewBtn.textContent = '미리보기';
+            previewBtn.className = 'action-btn bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 text-sm font-semibold py-1 px-3 rounded-md';
+            previewBtn.onclick = () => previewFile(index);
+
+            const downloadBtn = document.createElement('a');
+            downloadBtn.href = url;
+            downloadBtn.download = file.fileName.split('/').pop();
+            downloadBtn.textContent = '다운로드';
+            downloadBtn.className = 'action-btn bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-1 px-3 rounded-md';
+
+            buttonsWrapper.appendChild(previewBtn);
+            buttonsWrapper.appendChild(downloadBtn);
+
+            itemWrapper.appendChild(textWrapper);
+            itemWrapper.appendChild(buttonsWrapper);
+
+            return itemWrapper;
+        }
+        
+        function previewFile(index) {
+            const file = generatedFiles[index];
+            if (file) {
+                const previewWindow = window.open('', '_blank');
+                if (previewWindow) {
+                    previewWindow.document.open();
+                    previewWindow.document.write(file.content);
+                    
+                    const notificationHTML = `
+                        <div id="preview-notification" style="position: sticky; top: 0; left: 0; width: 100%; background-color: #1e40af; color: white; padding: 12px; text-align: center; font-size: 14px; z-index: 9999; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                            <p style="margin: 0; flex-grow: 1;"><strong>미리보기 안내:</strong> 이 페이지는 단일 파일 미리보기입니다. 메뉴나 다른 페이지로의 이동은 다운로드 후 전체 파일을 함께 열었을 때 정상적으로 작동합니다.</p>
+                            <button onclick="document.getElementById('preview-notification').style.display='none';" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; margin-left: 16px; line-height: 1;">&times;</button>
+                        </div>
+                    `;
+                    
+                    const bodyTag = previewWindow.document.querySelector('body');
+                    if (bodyTag) {
+                        bodyTag.insertAdjacentHTML('afterbegin', notificationHTML);
+                    }
+                    
+                    previewWindow.document.close();
+                } else {
+                    alert('팝업 창이 차단되었습니다. 미리보기를 허용해주세요.');
+                }
+            }
+        }
+
+        downloadAllBtn.addEventListener('click', () => {
+            const zip = new JSZip();
+            generatedFiles.forEach(file => {
+                zip.file(file.fileName, file.content);
+            });
+
+            zip.generateAsync({ type: "blob" })
+                .then(function(content) {
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(content);
+                    link.download = `${blogTitleInput.value || 'blog'}.zip`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                });
+        });
+
+        function getFormattedDate(date) {
+            return new Date(date).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        const blogTemplate = (title, content, pages, font, scripts = '', pathPrefix = './') => {
+            const pageLinks = pages.map(p => 
+                `<a href="${pathPrefix}pages/${p.postName}.html" class="text-gray-500 hover:text-gray-900">${p.title}</a>`
+            ).join('');
+
+            return `
+<!DOCTYPE html>
+<html lang="ko" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title} | ${blogTitleInput.value}</title>
+    <script src="https://cdn.tailwindcss.com"><\/script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="${font.url}" rel="stylesheet">
+    <style>
+        body { font-family: ${font.family}; }
+        .prose h1, .prose h2, .prose h3 { scroll-margin-top: 80px; }
+        .prose a { color: #4f46e5; }
+        .tag-filter.active, .meta-tag.active { background-color: #4f46e5; color: white !important; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 transition-colors duration-300">
+    <header class="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-gray-200">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <a href="${pathPrefix}index.html" class="text-2xl font-bold text-gray-900">${blogTitleInput.value}</a>
+            <div class="flex items-center space-x-6">
+                <a href="${pathPrefix}index.html" class="text-gray-500 hover:text-gray-900">블로그</a>
+                ${pageLinks}
+            </div>
+        </nav>
+    </header>
+    <main class="container mx-auto px-6 py-8 md:py-12">${content}</main>
+    <footer class="mt-16 bg-gray-100 border-t border-gray-200">
+        <div class="container mx-auto px-6 py-8 text-center text-gray-500">
+            <p>&copy; ${new Date().getFullYear()} ${blogTitleInput.value}. All rights reserved.</p>
+            <p class="text-sm mt-2">Powered by Gemini</p>
+        </div>
+    </footer>
+    ${scripts}
+</body>
+</html>`;
+        }
+
+        function createIndexHtml(posts, pages, font) {
+            const yearCounts = {};
+            const categoryCounts = {};
+            const tagCounts = {};
+            const allCategories = {};
+            const allTags = {};
+
+            posts.forEach(post => {
+                const year = new Date(post.pubDate).getFullYear();
+                yearCounts[year] = (yearCounts[year] || 0) + 1;
+
+                post.categories.forEach(cat => {
+                    if (!allCategories[cat.slug]) allCategories[cat.slug] = cat.name;
+                    categoryCounts[cat.slug] = (categoryCounts[cat.slug] || 0) + 1;
+                });
+                post.tags.forEach(tag => {
+                    if (!allTags[tag.slug]) allTags[tag.slug] = tag.name;
+                    tagCounts[tag.slug] = (tagCounts[tag.slug] || 0) + 1;
+                });
+            });
+
+            const yearOptions = Object.keys(yearCounts).sort((a, b) => b - a).map(y => `<option value="${y}">${y}년 (${yearCounts[y]})</option>`).join('');
+            const categoryOptions = Object.entries(allCategories).map(([slug, name]) => `<option value="${slug}">${name} (${categoryCounts[slug]})</option>`).join('');
+            const tagButtons = Object.entries(allTags).map(([slug, name]) => `<button class="tag-filter action-btn px-3 py-1 border rounded-full text-sm" data-tag="${slug}">${name} (${tagCounts[slug]})</button>`).join('');
+
+            const filterHtml = `
+                <div class="mb-12 p-6 bg-gray-100 rounded-xl shadow-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label for="search-input" class="block text-sm font-medium text-gray-700 mb-1">검색</label>
+                            <input type="text" id="search-input" placeholder="키워드 입력..." class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label for="year-filter" class="block text-sm font-medium text-gray-700 mb-1">연도</label>
+                            <select id="year-filter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="">전체</option>${yearOptions}</select>
+                        </div>
+                        <div>
+                            <label for="category-filter" class="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
+                            <select id="category-filter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="">전체</option>${categoryOptions}</select>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-gray-200">
+                        <span class="text-sm font-medium text-gray-700 mr-3">태그:</span>
+                        <div id="tag-cloud" class="inline-flex flex-wrap gap-2">${tagButtons}</div>
+                    </div>
+                </div>
+            `;
+
+            const postsJson = JSON.stringify(posts.map(p => ({
+                title: p.title, 
+                postName: p.postName,
+                pubDate: p.pubDate, 
+                creator: p.creator,
+                featuredImage: p.featuredImage,
+                year: new Date(p.pubDate).getFullYear(),
+                categories: p.categories.map(c => c.slug),
+                tags: p.tags.map(t => t.slug),
+                content: p.content.replace(/<[^>]*>?/gm, '').slice(0, 300)
+            })));
+
+            const filterScript = `
+<script>
+    const allPosts = ${postsJson};
+    const postListContainer = document.getElementById('post-list-container');
+    const noResultsDiv = document.getElementById('no-results');
+    const searchInput = document.getElementById('search-input');
+    const yearFilter = document.getElementById('year-filter');
+    const categoryFilter = document.getElementById('category-filter');
+    const tagCloud = document.getElementById('tag-cloud');
+    let activeTag = null;
+
+    const getFormattedDate = (dateStr) => new Date(dateStr).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    const formatDateForFilename = (dateStr) => {
+        const date = new Date(dateStr);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return \`\${year}-\${month}-\${day}\`;
+    };
+
+    const renderPosts = (postsToRender) => {
+        if (postsToRender.length === 0) {
+            postListContainer.innerHTML = '';
+            noResultsDiv.classList.remove('hidden');
+        } else {
+            noResultsDiv.classList.add('hidden');
+            postListContainer.innerHTML = postsToRender.map(post => {
+                const datePrefix = formatDateForFilename(post.pubDate);
+                const fileName = \`\${datePrefix}-\${post.postName}.html\`;
+                return \`
+                <a href="posts/\${fileName}" class="block post-card bg-white border border-gray-200 rounded-xl overflow-hidden hover:border-blue-500 hover:shadow-lg transition-all duration-300">
+                    <div class="aspect-video w-full bg-gray-100">
+                        <img src="\${post.featuredImage}" onerror="this.onerror=null;this.src='https://placehold.co/600x338/e2e8f0/94a3b8?text=Image+Not+Found';" alt="\${post.title}" class="w-full h-full object-cover">
+                    </div>
+                    <article class="p-6">
+                        <p class="text-sm text-gray-500">\${getFormattedDate(post.pubDate)} &middot; \${post.creator}</p>
+                        <h2 class="text-2xl md:text-3xl font-bold mt-2 text-gray-900">\${post.title}</h2>
+                    </article>
+                </a>
+            \`}).join('');
+        }
+    };
+
+    const resetFilters = (except) => {
+        if (except !== 'search') searchInput.value = '';
+        if (except !== 'year') yearFilter.value = '';
+        if (except !== 'category') categoryFilter.value = '';
+        if (except !== 'tag') {
+            if(activeTag) {
+                const currentActive = tagCloud.querySelector('.tag-filter.active');
+                if(currentActive) currentActive.classList.remove('active');
+                activeTag = null;
+            }
+        }
+    };
+
+    const applyFilters = () => {
+        const searchTerm = searchInput.value.toLowerCase();
+        const selectedYear = yearFilter.value;
+        const selectedCategory = categoryFilter.value;
+        
+        let filteredPosts = allPosts;
+
+        if (searchTerm) {
+            filteredPosts = filteredPosts.filter(p => p.title.toLowerCase().includes(searchTerm) || p.content.toLowerCase().includes(searchTerm));
+        } else if (selectedYear) {
+            filteredPosts = filteredPosts.filter(p => p.year == selectedYear);
+        } else if (selectedCategory) {
+            filteredPosts = filteredPosts.filter(p => p.categories.includes(selectedCategory));
+        } else if (activeTag) {
+            filteredPosts = filteredPosts.filter(p => p.tags.includes(activeTag));
+        }
+        
+        renderPosts(filteredPosts);
+    };
+
+    searchInput.addEventListener('input', () => { resetFilters('search'); applyFilters(); });
+    yearFilter.addEventListener('change', () => { resetFilters('year'); applyFilters(); });
+    categoryFilter.addEventListener('change', () => { resetFilters('category'); applyFilters(); });
+    
+    tagCloud.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tag-filter')) {
+            const clickedTag = e.target.dataset.tag;
+            resetFilters('tag');
+            if (e.target.classList.contains('active')) {
+                activeTag = null;
+                e.target.classList.remove('active');
+            } else {
+                tagCloud.querySelectorAll('.tag-filter').forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+                activeTag = clickedTag;
+            }
+            applyFilters();
+        }
+    });
+    
+    const params = new URLSearchParams(window.location.search);
+    const filterType = params.get('filter');
+    const filterValue = params.get('value');
+
+    if (filterType === 'year' && filterValue) {
+        resetFilters('year');
+        yearFilter.value = filterValue;
+    } else if (filterType === 'category' && filterValue) {
+        resetFilters('category');
+        categoryFilter.value = filterValue;
+    } else if (filterType === 'tag' && filterValue) {
+        resetFilters('tag');
+        const tagButton = tagCloud.querySelector(\`[data-tag="\${filterValue}"]\`);
+        if (tagButton) {
+            tagButton.classList.add('active');
+            activeTag = filterValue;
+        }
+    }
+    
+    applyFilters();
+<\/script>
+            `;
+
+            const indexContent = `
+                <div class="max-w-4xl mx-auto">
+                    <h1 class="text-4xl md:text-5xl font-extrabold text-center mb-12 tracking-tight">게시글 목록</h1>
+                    ${filterHtml}
+                    <div id="post-list-container" class="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
+                    <div id="no-results" class="hidden text-center py-12">
+                         <p class="text-lg text-gray-500">검색 결과가 없습니다.</p>
+                    </div>
+                </div>
+            `;
+            return blogTemplate('블로그', indexContent, pages, font, filterScript, './');
+        }
+
+        function createPostHtml(post, pages, font) {
+            const postYear = new Date(post.pubDate).getFullYear();
+            const yearLink = `<a href="../index.html?filter=year&value=${postYear}" class="meta-tag inline-block bg-gray-200 text-gray-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded-full hover:bg-gray-300">${postYear}</a>`;
+
+            const categoryLinks = post.categories.map(cat => 
+                `<a href="../index.html?filter=category&value=${encodeURIComponent(cat.slug)}" class="meta-tag inline-block bg-indigo-100 text-indigo-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded-full hover:bg-indigo-200">${cat.name}</a>`
+            ).join('');
+            
+            const tagLinks = post.tags.map(tag => 
+                `<a href="../index.html?filter=tag&value=${encodeURIComponent(tag.slug)}" class="meta-tag inline-block bg-gray-200 text-gray-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded-full hover:bg-gray-300">${tag.name}</a>`
+            ).join('');
+
+            const metaHtml = `
+                <div class="border-t border-b border-gray-200 py-4 my-6 space-y-2">
+                    <div class="flex items-center"><span class="text-sm font-bold w-16 shrink-0 text-gray-600">작성 연도</span> <div class="flex flex-wrap gap-2">${yearLink}</div></div>
+                    ${post.categories.length > 0 ? `<div class="flex items-center"><span class="text-sm font-bold w-16 shrink-0 text-gray-600">카테고리</span> <div class="flex flex-wrap gap-2">${categoryLinks}</div></div>` : ''}
+                    ${post.tags.length > 0 ? `<div class="flex items-center"><span class="text-sm font-bold w-16 shrink-0 text-gray-600">태그</span> <div class="flex flex-wrap gap-2">${tagLinks}</div></div>` : ''}
+                </div>
+            `;
+
+            const featuredImageHtml = post.featuredImage ? `
+                <figure class="my-8">
+                    <img src="${post.featuredImage}" alt="${post.title}" class="w-full h-auto rounded-lg shadow-lg object-cover">
+                </figure>
+            ` : '';
+
+            const postContent = `
+                <div class="max-w-3xl mx-auto">
+                    <article class="prose lg:prose-xl max-w-none">
+                        <header class="mb-4">
+                            <h1 class="!text-4xl md:!text-5xl font-extrabold !mb-4">${post.title}</h1>
+                            <p class="text-base text-gray-500">${getFormattedDate(post.pubDate)} by ${post.creator}</p>
+                        </header>
+                        ${featuredImageHtml}
+                        ${metaHtml}
+                        ${post.content}
+                    </article>
+                </div>
+            `;
+            return blogTemplate(post.title, postContent, pages, font, '', '../');
+        }
+
+        function createPageHtml(page, pages, font) {
+             const pageContent = `
+                <div class="max-w-3xl mx-auto">
+                    <article class="prose lg:prose-xl max-w-none">
+                        <h1 class="!text-4xl md:!text-5xl font-extrabold !mb-8">${page.title}</h1>
+                        ${page.content}
+                    </article>
+                </div>
+            `;
+            return blogTemplate(page.title, pageContent, pages, font, '', '../');
+        }
+    </script>
+</body>
+</html>
