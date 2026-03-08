@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architect's Executioner Sword - Presentation</title>
+    <!-- Reveal.js CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/black.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #e63946;
+            --accent-color: #ffd700;
+            --bg-gradient: linear-gradient(135deg, #1a1a1a 0%, #000000 100%);
+        }
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        .reveal {
+            background: var(--bg-gradient);
+        }
+        .reveal h1, .reveal h2, .reveal h3 {
+            font-weight: 700;
+            text-transform: none;
+            color: #fff;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .reveal h1 { color: var(--primary-color); }
+        .reveal .slides section {
+            text-align: left;
+        }
+        .highlight {
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+        .sub-text {
+            font-size: 0.6em;
+            color: #ccc;
+            margin-top: 10px;
+        }
+        .border-left {
+            border-left: 5px solid var(--primary-color);
+            padding-left: 20px;
+            margin: 20px 0;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .speaker-note-box {
+            display: none; /* PDF 내보내기 또는 내부 참조용 */
+        }
+        .badge {
+            display: inline-block;
+            background: var(--primary-color);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.4em;
+            vertical-align: middle;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="reveal">
+        <div class="slides">
+            
+            <!-- Slide 1: Title -->
+            <section data-background-color="#000">
+                <div style="text-align: center;">
+                    <div class="badge">ARCHITECT'S FUNDAMENTALS</div>
+                    <h1 style="font-size: 2.2em;">바이브 코딩 시대,<br>아키텍트의 <span class="highlight">'처형인의 검'</span>은<br>어디에서 오는가?</h1>
+                    <p style="font-size: 0.8em; margin-top: 50px;">주술회전 '히구루마 히로미'의 에피소드로 본 시스템 설계의 본질</p>
+                    <p class="sub-text">발표자: [성함]</p>
+                </div>
+            </section>
+
+            <!-- Slide 2: Context -->
+            <section>
+                <div class="badge">CONTEXT</div>
+                <h2>사멸회유: 기술의 홍수</h2>
+                <div class="border-left">
+                    <p>현대 개발 생태계는 마치 <strong>'사멸회유'</strong>와 같습니다.</p>
+                </div>
+                <ul>
+                    <li><span class="highlight">Vibe Coding:</span> 자연어로 의도를 던지면 코드가 쏟아지는 시대</li>
+                    <li><span class="highlight">복잡한 술식:</span> 매일 쏟아지는 새로운 프레임워크와 도구들</li>
+                    <li><span class="highlight">위기:</span> "어떻게(How)"는 빨라졌으나, 시스템의 "왜(Why)"가 실종됨</li>
+                </ul>
+                <p class="sub-text">도구가 강력해질수록 우리는 정작 '무엇을 위해' 이 기술을 쓰는지 잊곤 합니다.</p>
+            </section>
+
+            <!-- Slide 3: Domain Expansion -->
+            <section>
+                <div class="badge">ARCHITECTURE</div>
+                <h2>영역 전개: 복주사선(伏誅賜線)</h2>
+                <div class="grid-2">
+                    <div>
+                        <p class="highlight">질서의 강제</p>
+                        <p style="font-size: 0.8em;">히구루마의 영역이 폭력을 금지하고 재판의 룰을 강제하듯, 아키텍처는 시스템 내의 <span class="highlight">'질서'</span>입니다.</p>
+                    </div>
+                    <div>
+                        <p class="highlight">아키텍트의 역할</p>
+                        <p style="font-size: 0.8em;">개발자가 함부로 선을 넘지 못하게 하는 <strong>제약 사항(Constraint)</strong>을 설계하는 것.</p>
+                    </div>
+                </div>
+                <div class="border-left" style="font-size: 0.7em; margin-top: 30px;">
+                    AI가 아무리 많은 코드를 짜도, 아키텍처가 정의한 '관심사의 분리'와 '결합도'의 룰을 어겨선 안 됩니다.
+                </div>
+            </section>
+
+            <!-- Slide 4: Decision Making -->
+            <section>
+                <div class="badge">DECISION</div>
+                <h2>식신 '저지맨': 비판적 의사결정</h2>
+                <p>AI의 제안을 심판하는 <span class="highlight">객관적 저울</span></p>
+                <ul style="font-size: 0.8em;">
+                    <li><strong>비판적 사고:</strong> 저지맨은 증거로만 말합니다. 아키텍트는 AI의 제안을 '바이브'가 아닌 '설계적 타당성'으로 심판해야 합니다.</li>
+                    <li><strong>Trade-off 분석:</strong> 비용 vs 성능, 유연성 vs 단순함 사이의 저울질.</li>
+                </ul>
+                <blockquote style="font-size: 0.7em; background: #222; padding: 20px; border-radius: 10px;">
+                    "이 구조는 3년 뒤 유지보수라는 법정에서 무죄를 선고받을 수 있는가?"
+                </blockquote>
+            </section>
+
+            <!-- Slide 5: Back to Basic -->
+            <section data-background-transition="zoom">
+                <div class="badge">CORE</div>
+                <h2>"미안, 초심으로 돌아갔거든"</h2>
+                <p class="highlight">본질로의 회귀 (Back to Basic)</p>
+                <div class="grid-2">
+                    <ul style="font-size: 0.7em;">
+                        <li><strong>비즈니스 이해:</strong> 고객의 진짜 불편함을 파악하는 도메인 모델링.</li>
+                        <li><strong>변하지 않는 원리:</strong> CS 기초(네트워크, OS, DB), SOLID, 디자인 패턴.</li>
+                    </ul>
+                    <div style="background: rgba(230, 57, 70, 0.1); padding: 15px; border-radius: 10px; font-size: 0.6em;">
+                        <p>히구루마가 타락을 멈추고 변호사의 사명감을 되찾았을 때, 그는 가장 강력해졌습니다.</p>
+                        <p>기술적 유행보다 <strong>'비즈니스 문제를 해결하는 가장 단순한 원리'</strong>에 집중하십시오.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 6: Executioner's Sword -->
+            <section>
+                <div class="badge">POWER</div>
+                <h2>처형인의 검: 아키텍트의 필살기</h2>
+                <p style="font-size: 0.8em;">법전을 완벽히 이해한 자만이 얻는 절대적 무기</p>
+                <ol style="font-size: 0.8em;">
+                    <li><span class="highlight">의도 설계(Design of Intent):</span> 타이핑보다 설계에 더 많은 시간을 쓰십시오.</li>
+                    <li><span class="highlight">기초 체력:</span> AI의 결과물을 한 줄씩 검증할 수 있는 로우레벨 지식을 기르십시오.</li>
+                </ol>
+                <p class="border-left" style="font-size: 0.7em;">
+                    복잡한 장애 상황에서 AI도 해결 못 하는 문제를 단칼에 해결하는 것은 결국 <strong>'원리 기반의 통찰'</strong>입니다.
+                </p>
+            </section>
+
+            <!-- Slide 7: Conclusion -->
+            <section data-background-color="#e63946">
+                <div style="text-align: center;">
+                    <h2 style="color: white;">법전을 든 아키텍트가 되십시오</h2>
+                    <p style="margin-top: 30px;">"기술의 주인이 될 것인가, 도구의 부품이 될 것인가?"</p>
+                    <div style="background: white; color: black; padding: 20px; border-radius: 10px; display: inline-block; margin-top: 20px; font-weight: bold;">
+                        기본을 아는 아키텍트만이 시스템의 진정한 주인이 됩니다.
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </div>
+
+    <!-- Reveal.js JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.js"></script>
+    <script>
+        window.onload = function() {
+            Reveal.initialize({
+                // hash와 history를 false로 설정하여 보안 제한 환경에서의 replaceState 오류를 방지합니다.
+                hash: false,
+                history: false,
+                center: true,
+                transition: 'slide', // none/fade/slide/convex/concave/zoom
+                width: 1280,
+                height: 720,
+                margin: 0.1,
+                minScale: 0.2,
+                maxScale: 2.0
+            });
+        };
+    </script>
+</body>
+</html>
