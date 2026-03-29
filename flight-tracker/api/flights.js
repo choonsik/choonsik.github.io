@@ -1,24 +1,34 @@
 /**
  * Vercel Serverless Function
  * 위치: /api/flights.js
- * 
+ *
  * OpenSky Network API 프록시
- * CLIENT_ID와 CLIENT_SECRET을 서버에서만 관리하고,
- * 프론트엔드에는 노출하지 않습니다.
  */
 
-import https from 'https';
+const TOKEN_URL = 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
+const STATES_BASE_URL = 'https://opensky-network.org/api/states/all';
 
-const TOKEN_REQUEST_TIMEOUT_MS = 8000;
-const OPENSKY_REQUEST_TIMEOUT_MS = 8000;
-const MAX_NETWORK_RETRIES = 1;
+const TOKEN_TIMEOUT_MS = 7000;
+const DATA_TIMEOUT_MS = 7000;
+const AUTH_FLOW_HARD_TIMEOUT_MS = 8000;
+const DATA_FLOW_HARD_TIMEOUT_MS = 8000;
 const STALE_CACHE_TTL_MS = 120000;
-const AUTH_FLOW_HARD_TIMEOUT_MS = 9000;
-const DATA_FLOW_HARD_TIMEOUT_MS = 9000;
-const httpsAgent = new https.Agent({ keepAlive: true });
 
-function delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+let cachedToken = null;
+let tokenExpiresAt = 0;
+let lastSuccessfulPayload = null;
+let lastSuccessfulAt = 0;
+
+function isTransientNetworkError(error) {
+    const msg = String(error?.message || '');
+    return (
+        msg.includes('timeout') ||
+        msg.includes('ETIMEDOUT') ||
+        msg.includes('ECONNRESET') ||
+        msg.includes('EHOSTUNREACH') ||
+        msg.includes('ENOTFOUND') ||
+        msg.includes('Failed to fetch')
+    );
 }
 
 async function withHardTimeout(fn, timeoutMs, label) {
@@ -27,9 +37,7 @@ async function withHardTimeout(fn, timeoutMs, label) {
         return await Promise.race([
             fn(),
             new Promise((_, reject) => {
-                timeoutId = setTimeout(() => {
-                    reject(new Error(`${label} timeout (${timeoutMs}ms)`));
-                }, timeoutMs);
+                timeoutId = setTimeout(() => reject(new Error(`${label} timeout (${timeoutMs}ms)`)), timeoutMs);
             })
         ]);
     } finally {
@@ -37,214 +45,146 @@ async function withHardTimeout(fn, timeoutMs, label) {
     }
 }
 
-function isTransientNetworkError(error) {
-    const msg = String(error?.message || '');
-    return (
-        msg.includes('ETIMEDOUT') ||
-        msg.includes('ECONNRESET') ||
-        msg.includes('EHOSTUNREACH') ||
-        msg.includes('ENOTFOUND') ||
-        msg.includes('socket hang up')
-    );
-}
+async function fetchJson(url, options = {}, timeoutMs = DATA_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-/**
- * OAuth2 토큰 발급 (메모리 캐싱)
- */
-let cachedToken = null;
-let tokenExpiresAt = null;
-let lastSuccessfulPayload = null;
-let lastSuccessfulAt = 0;
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+            headers: {
+                Accept: 'application/json',
+                ...(options.headers || {})
+            }
+        });
+
+        const bodyText = await response.text();
+        let body = {};
+        if (bodyText) {
+            try {
+                body = JSON.parse(bodyText);
+            } catch {
+                body = { message: bodyText };
+            }
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${body.message || response.statusText}`);
+        }
+
+        return body;
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            throw new Error(`Request timeout (${timeoutMs}ms)`);
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
 
 async function getTokenFromOpenSky(clientId, clientSecret) {
-    // 유효한 토큰이 있으면 반환
-    if (cachedToken && tokenExpiresAt && Date.now() < tokenExpiresAt) {
+    if (cachedToken && Date.now() < tokenExpiresAt) {
         return cachedToken;
     }
-    
-    return new Promise((resolve, reject) => {
-        const postData = new URLSearchParams({
-            client_id: clientId,
-            client_secret: clientSecret,
-            grant_type: 'client_credentials'
-        }).toString();
-        
-        const options = {
-            hostname: 'auth.opensky-network.org',
-            port: 443,
-            path: '/auth/realms/opensky-network/protocol/openid-connect/token',
+
+    const body = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret
+    });
+
+    const json = await fetchJson(
+        TOKEN_URL,
+        {
             method: 'POST',
-            agent: httpsAgent,
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Content-Length': Buffer.byteLength(postData)
-            }
-        };
-        
-        const req = https.request(options, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                if (res.statusCode === 200) {
-                    const json = JSON.parse(data);
-                    cachedToken = json.access_token;
-                    tokenExpiresAt = Date.now() + (json.expires_in - 30) * 1000;
-                    resolve(cachedToken);
-                } else {
-                    reject(new Error(`Token request failed: ${res.statusCode}`));
-                }
-            });
-        });
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body
+        },
+        TOKEN_TIMEOUT_MS
+    );
 
-        req.setTimeout(TOKEN_REQUEST_TIMEOUT_MS, () => {
-            req.destroy(new Error(`Token request timeout (${TOKEN_REQUEST_TIMEOUT_MS}ms)`));
-        });
-        
-        req.on('error', reject);
-        req.write(postData);
-        req.end();
-    });
+    cachedToken = json.access_token;
+    tokenExpiresAt = Date.now() + ((json.expires_in || 1800) - 30) * 1000;
+    return cachedToken;
 }
 
-/**
- * OpenSky API 호출
- */
-async function fetchFromOpenSky(path, token = null) {
-    return new Promise((resolve, reject) => {
-        const headers = {};
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        const options = {
-            hostname: 'opensky-network.org',
-            port: 443,
-            path: path,
-            method: 'GET',
-            agent: httpsAgent,
-            headers
-        };
-        
-        const req = https.request(options, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                if (res.statusCode === 200) {
-                    resolve(JSON.parse(data));
-                } else if (res.statusCode === 401) {
-                    // 토큰 만료
-                    cachedToken = null;
-                    tokenExpiresAt = null;
-                    reject(new Error('Token expired'));
-                } else {
-                    reject(new Error(`OpenSky API error: ${res.statusCode}`));
-                }
-            });
-        });
-
-        req.setTimeout(OPENSKY_REQUEST_TIMEOUT_MS, () => {
-            req.destroy(new Error(`OpenSky request timeout (${OPENSKY_REQUEST_TIMEOUT_MS}ms)`));
-        });
-        
-        req.on('error', reject);
-        req.end();
-    });
+async function fetchStatesFromOpenSky(query, token = null) {
+    const url = `${STATES_BASE_URL}${query ? `?${query}` : ''}`;
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    return fetchJson(url, { method: 'GET', headers }, DATA_TIMEOUT_MS);
 }
 
-async function withNetworkRetries(requestFn, maxRetries = MAX_NETWORK_RETRIES) {
-    let lastError = null;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-            return await requestFn();
-        } catch (error) {
-            lastError = error;
-            const retryable = isTransientNetworkError(error) || String(error.message || '').includes('timeout');
-            if (!retryable || attempt === maxRetries) {
-                throw lastError;
-            }
+function buildQuery(req) {
+    const query = new URLSearchParams();
+    const requestUrl = new URL(req.url, 'http://localhost');
+    const bounding = req.query?.bounding || requestUrl.searchParams.get('bounding');
+    const icao24 = req.query?.icao24 || requestUrl.searchParams.get('icao24');
 
-            const backoffMs = 800 * (attempt + 1);
-            await delay(backoffMs);
-        }
-    }
-
-    throw lastError;
-}
-
-/**
- * 메인 핸들러
- */
-export default async function handler(req, res) {
-    // CORS 헤더
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    
-    if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
-    }
-    
-    try {
-        // 환경변수에서 자격증명 읽음
-        const clientId = process.env.OPENSKY_CLIENT_ID;
-        const clientSecret = process.env.OPENSKY_CLIENT_SECRET;
-        
-        if (!clientId || !clientSecret) {
-            return res.status(500).json({
-                error: 'Server configuration error',
-                message: 'OPENSKY_CLIENT_ID and OPENSKY_CLIENT_SECRET must be set'
-            });
-        }
-        
-        // 요청 쿼리 파라미터
-        const query = new URLSearchParams();
-        
-        const requestUrl = new URL(req.url, 'http://localhost');
-        const bounding = req.query?.bounding || requestUrl.searchParams.get('bounding');
-        const icao24 = req.query?.icao24 || requestUrl.searchParams.get('icao24');
-
-        if (bounding) {
-            const [latMin, lonMin, latMax, lonMax] = bounding.split(',').map(Number);
+    if (bounding) {
+        const [latMin, lonMin, latMax, lonMax] = bounding.split(',').map(Number);
+        if ([latMin, lonMin, latMax, lonMax].every(Number.isFinite)) {
             query.append('lamin', latMin);
             query.append('lomin', lonMin);
             query.append('lamax', latMax);
             query.append('lomax', lonMax);
         }
-        
-        if (icao24) {
-            query.append('icao24', icao24);
-        }
-        
-        const path = `/api/states/all${query.toString() ? '?' + query.toString() : ''}`;
+    }
 
-        // OpenSky API 호출: 인증 모드 우선, 실패 시 비인증 폴백
-        let data;
-        try {
-            // 인증 경로는 빠르게 실패하도록 재시도 최소화
-            const token = await withHardTimeout(
-                () => withNetworkRetries(() => getTokenFromOpenSky(clientId, clientSecret), 0),
-                AUTH_FLOW_HARD_TIMEOUT_MS,
-                'Auth flow'
-            );
-            data = await withHardTimeout(
-                () => withNetworkRetries(() => fetchFromOpenSky(path, token), 0),
-                DATA_FLOW_HARD_TIMEOUT_MS,
-                'Data flow'
-            );
-        } catch (authPathError) {
-            const retryableAuthFailure =
-                isTransientNetworkError(authPathError) ||
-                String(authPathError?.message || '').includes('timeout');
+    if (icao24) {
+        query.append('icao24', icao24);
+    }
 
-            if (!retryableAuthFailure) {
-                throw authPathError;
+    return query.toString();
+}
+
+export default async function handler(req, res) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+
+    const requestUrl = new URL(req.url, 'http://localhost');
+    if (requestUrl.searchParams.get('health') === '1') {
+        return res.status(200).json({ ok: true, service: 'flights-api' });
+    }
+
+    try {
+        const clientId = process.env.OPENSKY_CLIENT_ID;
+        const clientSecret = process.env.OPENSKY_CLIENT_SECRET;
+        const query = buildQuery(req);
+
+        let data = null;
+
+        // 1) 인증 토큰이 있으면 인증 호출 우선 시도
+        if (clientId && clientSecret) {
+            try {
+                const token = await withHardTimeout(
+                    () => getTokenFromOpenSky(clientId, clientSecret),
+                    AUTH_FLOW_HARD_TIMEOUT_MS,
+                    'Auth flow'
+                );
+                data = await withHardTimeout(
+                    () => fetchStatesFromOpenSky(query, token),
+                    DATA_FLOW_HARD_TIMEOUT_MS,
+                    'Data flow'
+                );
+            } catch (authError) {
+                if (!isTransientNetworkError(authError)) {
+                    throw authError;
+                }
             }
+        }
 
-            // 인증 경로가 일시적으로 실패하면 비인증 조회로 폴백
-            // 비인증 폴백도 단일 시도 후 실패 처리
+        // 2) 인증 실패/미설정 시 비인증 폴백
+        if (!data) {
             data = await withHardTimeout(
-                () => withNetworkRetries(() => fetchFromOpenSky(path, null), 0),
+                () => fetchStatesFromOpenSky(query, null),
                 DATA_FLOW_HARD_TIMEOUT_MS,
                 'Fallback data flow'
             );
@@ -252,21 +192,12 @@ export default async function handler(req, res) {
 
         lastSuccessfulPayload = data;
         lastSuccessfulAt = Date.now();
-        
-        // 응답
-        res.status(200).json(data);
-        
+
+        return res.status(200).json(data);
     } catch (error) {
         console.error('API Error:', error.message);
-        
-        if (error.message === 'Token expired') {
-            return res.status(401).json({
-                error: 'Token expired',
-                message: 'Please retry the request'
-            });
-        }
-        
-        if (isTransientNetworkError(error) || String(error.message || '').includes('timeout')) {
+
+        if (isTransientNetworkError(error)) {
             if (lastSuccessfulPayload && Date.now() - lastSuccessfulAt <= STALE_CACHE_TTL_MS) {
                 return res.status(200).json({
                     ...lastSuccessfulPayload,
@@ -281,7 +212,7 @@ export default async function handler(req, res) {
             });
         }
 
-        res.status(500).json({
+        return res.status(500).json({
             error: 'API call failed',
             message: error.message
         });
