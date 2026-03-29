@@ -5,7 +5,7 @@
  * OpenSky Network API 프록시
  */
 
-import { Agent } from 'undici';
+import dns from 'node:dns';
 
 const TOKEN_URL = 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
 const STATES_BASE_URLS = [
@@ -23,7 +23,7 @@ const DATA_TIMEOUT_MS = 7000;
 const AUTH_FLOW_HARD_TIMEOUT_MS = 8000;
 const DATA_FLOW_HARD_TIMEOUT_MS = 8000;
 const STALE_CACHE_TTL_MS = 120000;
-const ipv4Dispatcher = new Agent({ connect: { family: 4 } });
+dns.setDefaultResultOrder('ipv4first');
 
 let cachedToken = null;
 let tokenExpiresAt = 0;
@@ -64,7 +64,6 @@ async function fetchJson(url, options = {}, timeoutMs = DATA_TIMEOUT_MS) {
         const response = await fetch(url, {
             ...options,
             signal: controller.signal,
-            dispatcher: ipv4Dispatcher,
             headers: {
                 Accept: 'application/json',
                 ...(options.headers || {})
