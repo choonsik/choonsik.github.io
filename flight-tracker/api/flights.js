@@ -9,6 +9,24 @@
 
 import https from 'https';
 
+const REQUEST_TIMEOUT_MS = 12000;
+const MAX_NETWORK_RETRIES = 2;
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientNetworkError(error) {
+    const msg = String(error?.message || '');
+    return (
+        msg.includes('ETIMEDOUT') ||
+        msg.includes('ECONNRESET') ||
+        msg.includes('EHOSTUNREACH') ||
+        msg.includes('ENOTFOUND') ||
+        msg.includes('socket hang up')
+    );
+}
+
 /**
  * OAuth2 토큰 발급 (메모리 캐싱)
  */
@@ -53,6 +71,10 @@ async function getTokenFromOpenSky(clientId, clientSecret) {
                 }
             });
         });
+
+        req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+            req.destroy(new Error(`Token request timeout (${REQUEST_TIMEOUT_MS}ms)`));
+        });
         
         req.on('error', reject);
         req.write(postData);
@@ -91,10 +113,34 @@ async function fetchFromOpenSky(path, token) {
                 }
             });
         });
+
+        req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+            req.destroy(new Error(`OpenSky request timeout (${REQUEST_TIMEOUT_MS}ms)`));
+        });
         
         req.on('error', reject);
         req.end();
     });
+}
+
+async function withNetworkRetries(requestFn) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= MAX_NETWORK_RETRIES; attempt++) {
+        try {
+            return await requestFn();
+        } catch (error) {
+            lastError = error;
+            const retryable = isTransientNetworkError(error) || String(error.message || '').includes('timeout');
+            if (!retryable || attempt === MAX_NETWORK_RETRIES) {
+                throw lastError;
+            }
+
+            const backoffMs = 800 * (attempt + 1);
+            await delay(backoffMs);
+        }
+    }
+
+    throw lastError;
 }
 
 /**
@@ -124,7 +170,7 @@ export default async function handler(req, res) {
         }
         
         // 토큰 발급
-        const token = await getTokenFromOpenSky(clientId, clientSecret);
+        const token = await withNetworkRetries(() => getTokenFromOpenSky(clientId, clientSecret));
         
         // 요청 쿼리 파라미터
         const query = new URLSearchParams();
@@ -148,7 +194,7 @@ export default async function handler(req, res) {
         const path = `/api/v1/states/all${query.toString() ? '?' + query.toString() : ''}`;
         
         // OpenSky API 호출
-        const data = await fetchFromOpenSky(path, token);
+        const data = await withNetworkRetries(() => fetchFromOpenSky(path, token));
         
         // 응답
         res.status(200).json(data);
@@ -163,6 +209,13 @@ export default async function handler(req, res) {
             });
         }
         
+        if (isTransientNetworkError(error) || String(error.message || '').includes('timeout')) {
+            return res.status(503).json({
+                error: 'Upstream network timeout',
+                message: '네트워크 타임아웃이 발생했습니다. 잠시 후 자동 재시도됩니다.'
+            });
+        }
+
         res.status(500).json({
             error: 'API call failed',
             message: error.message
