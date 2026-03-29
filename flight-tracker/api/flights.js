@@ -167,6 +167,71 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, service: 'flights-api' });
     }
 
+    if (requestUrl.searchParams.get('diag') === '1') {
+        const startedAt = Date.now();
+        const clientId = process.env.OPENSKY_CLIENT_ID;
+        const clientSecret = process.env.OPENSKY_CLIENT_SECRET;
+        const query = buildQuery(req);
+
+        const result = {
+            ok: true,
+            hasCredentials: Boolean(clientId && clientSecret),
+            token: { ok: false, ms: 0, error: null },
+            statesAuth: { ok: false, ms: 0, error: null },
+            statesAnon: { ok: false, ms: 0, error: null },
+            totalMs: 0
+        };
+
+        if (clientId && clientSecret) {
+            const t0 = Date.now();
+            try {
+                const token = await withHardTimeout(
+                    () => getTokenFromOpenSky(clientId, clientSecret),
+                    AUTH_FLOW_HARD_TIMEOUT_MS,
+                    'Auth flow'
+                );
+                result.token.ok = true;
+                result.token.ms = Date.now() - t0;
+
+                const t1 = Date.now();
+                try {
+                    await withHardTimeout(
+                        () => fetchStatesFromOpenSky(query, token),
+                        DATA_FLOW_HARD_TIMEOUT_MS,
+                        'Data flow'
+                    );
+                    result.statesAuth.ok = true;
+                    result.statesAuth.ms = Date.now() - t1;
+                } catch (e) {
+                    result.statesAuth.error = e.message;
+                    result.statesAuth.ms = Date.now() - t1;
+                }
+            } catch (e) {
+                result.token.error = e.message;
+                result.token.ms = Date.now() - t0;
+            }
+        }
+
+        const t2 = Date.now();
+        try {
+            await withHardTimeout(
+                () => fetchStatesFromOpenSky(query, null),
+                DATA_FLOW_HARD_TIMEOUT_MS,
+                'Fallback data flow'
+            );
+            result.statesAnon.ok = true;
+            result.statesAnon.ms = Date.now() - t2;
+        } catch (e) {
+            result.statesAnon.error = e.message;
+            result.statesAnon.ms = Date.now() - t2;
+        }
+
+        result.totalMs = Date.now() - startedAt;
+        result.ok = result.statesAuth.ok || result.statesAnon.ok;
+
+        return res.status(result.ok ? 200 : 503).json(result);
+    }
+
     try {
         const clientId = process.env.OPENSKY_CLIENT_ID;
         const clientSecret = process.env.OPENSKY_CLIENT_SECRET;
