@@ -1,0 +1,48 @@
+name: Update Flight Cache
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-cache:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch latest OpenSky snapshot
+        run: |
+          set -e
+          URL="https://opensky-network.org/api/states/all?lamin=35&lomin=125&lamax=39&lomax=129"
+          TMP_FILE="/tmp/latest-states.json"
+          OUT_FILE="flight-tracker/data/latest-states.json"
+
+          curl -sS --max-time 25 "$URL" > "$TMP_FILE"
+
+          if ! grep -q '"states":\[' "$TMP_FILE"; then
+            echo "Snapshot fetch failed or invalid payload"
+            exit 1
+          fi
+
+          cp "$TMP_FILE" "$OUT_FILE"
+
+      - name: Commit and push if changed
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- flight-tracker/data/latest-states.json; then
+            echo "No snapshot changes"
+            exit 0
+          fi
+
+          git add flight-tracker/data/latest-states.json
+          git commit -m "chore: refresh flight snapshot cache"
+          git push

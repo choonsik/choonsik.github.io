@@ -11,6 +11,10 @@ const STATES_URLS = [
   "https://opensky-network.org/api/states/all",
   "https://api.opensky-network.org/api/states/all"
 ];
+const ADSB_POINT_URLS = [
+  "https://api.adsb.lol/v2/point",
+  "https://api.airplanes.live/v2/point"
+];
 
 const ALLOWED_ORIGINS = [
   "https://choonsik.github.io",
@@ -141,6 +145,98 @@ function buildStatesUrl(req) {
   return params.toString();
 }
 
+function buildAdsbQuery(req, query) {
+  const params = new URLSearchParams(query);
+  const lamin = Number(params.get("lamin"));
+  const lomin = Number(params.get("lomin"));
+  const lamax = Number(params.get("lamax"));
+  const lomax = Number(params.get("lomax"));
+
+  // If no bounding box is provided, use a broad South Korea-centered radius.
+  if (![lamin, lomin, lamax, lomax].every(Number.isFinite)) {
+    return { lat: 36.8, lon: 127.8, radiusKm: 450 };
+  }
+
+  const centerLat = (lamin + lamax) / 2;
+  const centerLon = (lomin + lomax) / 2;
+
+  const latKm = Math.abs(lamax - lamin) * 111;
+  const lonKm = Math.abs(lomax - lomin) * 111 * Math.cos((centerLat * Math.PI) / 180);
+  const radiusKm = Math.max(30, Math.ceil(Math.max(latKm, lonKm) / 2) + 40);
+
+  return { lat: centerLat, lon: centerLon, radiusKm: Math.min(radiusKm, 600) };
+}
+
+function adsbAcToState(ac, nowSec) {
+  const icao24 = String(ac?.hex || "").toLowerCase();
+  if (!icao24 || !Number.isFinite(ac?.lat) || !Number.isFinite(ac?.lon)) {
+    return null;
+  }
+
+  const callsign = String(ac?.flight || "").trim();
+  const country = "Unknown";
+  const seen = Number.isFinite(ac?.seen) ? ac.seen : 0;
+  const seenPos = Number.isFinite(ac?.seen_pos) ? ac.seen_pos : seen;
+
+  const timePosition = Math.max(0, Math.floor(nowSec - seenPos));
+  const lastContact = Math.max(0, Math.floor(nowSec - seen));
+
+  const isGround = ac?.alt_baro === "ground" || ac?.on_ground === true;
+  const altitude = isGround
+    ? 0
+    : Number.isFinite(ac?.alt_baro)
+      ? Number(ac.alt_baro)
+      : null;
+
+  const geoAltitude = Number.isFinite(ac?.alt_geom) ? Number(ac.alt_geom) : null;
+
+  // ADS-B ground speed is knots. Convert to m/s for existing frontend parser.
+  const speedKt = Number.isFinite(ac?.gs) ? Number(ac.gs) : null;
+  const velocity = speedKt === null ? null : Number((speedKt / 1.94384).toFixed(2));
+
+  const track = Number.isFinite(ac?.track) ? Number(ac.track) : null;
+
+  // ADS-B vertical rate is typically ft/min. Convert to m/s.
+  const baroRateFpm = Number.isFinite(ac?.baro_rate) ? Number(ac.baro_rate) : null;
+  const verticalRate = baroRateFpm === null ? null : Number((baroRateFpm / 196.85).toFixed(2));
+
+  return [
+    icao24,
+    callsign,
+    country,
+    timePosition,
+    lastContact,
+    Number(ac.lon),
+    Number(ac.lat),
+    altitude,
+    Boolean(isGround),
+    velocity,
+    track,
+    verticalRate,
+    null,
+    geoAltitude,
+    ac?.squawk ? String(ac.squawk) : null
+  ];
+}
+
+function normalizeAdsbPayload(payload, query) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const acList = Array.isArray(payload?.ac) ? payload.ac : [];
+  const normalized = {
+    time: Number(payload?.now) || nowSec,
+    states: acList.map((ac) => adsbAcToState(ac, nowSec)).filter(Boolean)
+  };
+
+  const params = new URLSearchParams(query);
+  const icaoFilter = params.get("icao24");
+  if (icaoFilter) {
+    const target = String(icaoFilter).toLowerCase();
+    normalized.states = normalized.states.filter((state) => String(state[0]).toLowerCase() === target);
+  }
+
+  return normalized;
+}
+
 function parseBounding(query) {
   if (!query) return null;
   const params = new URLSearchParams(query);
@@ -231,6 +327,26 @@ async function fetchStates(query, token = null) {
   throw lastError || new Error("States fetch failed");
 }
 
+async function fetchAdsbStates(req, query) {
+  const { lat, lon, radiusKm } = buildAdsbQuery(req, query);
+  let lastError = null;
+
+  for (const base of ADSB_POINT_URLS) {
+    const url = `${base}/${lat.toFixed(4)}/${lon.toFixed(4)}/${radiusKm}`;
+    try {
+      const payload = await fetchWithTimeout(url, {}, 4500);
+      const normalized = normalizeAdsbPayload(payload, query);
+      if (Array.isArray(normalized.states)) {
+        return normalized;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("ADSB states fetch failed");
+}
+
 async function withDeadline(work, timeoutMs = REQUEST_DEADLINE_MS) {
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
@@ -272,12 +388,17 @@ app.get("/api/flights", async (req, res) => {
 
     const { data, source: liveSource } = await withDeadline(async () => {
       try {
-        const publicData = await fetchStates(query, null);
-        return { data: publicData, source: "public" };
+        const adsbData = await fetchAdsbStates(req, query);
+        return { data: adsbData, source: "adsb" };
       } catch {
-        const token = await getToken();
-        const tokenData = await fetchStates(query, token);
-        return { data: tokenData, source: "token" };
+        try {
+          const publicData = await fetchStates(query, null);
+          return { data: publicData, source: "public" };
+        } catch {
+          const token = await getToken();
+          const tokenData = await fetchStates(query, token);
+          return { data: tokenData, source: "token" };
+        }
       }
     });
 
