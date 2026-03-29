@@ -42,7 +42,11 @@ class FlightsAPI {
                 url += '?' + params.toString();
             }
             
-            const response = await fetch(url);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
             
             if (response.status === 401) {
                 throw new Error('인증 실패: 서버 자격증명 확인 필요');
@@ -67,6 +71,9 @@ class FlightsAPI {
 
             return [];
         } catch (error) {
+            if (error.name === 'AbortError') {
+                throw new Error('네트워크 요청 시간 초과');
+            }
             console.error('❌ getAllStates 오류:', error.message);
             throw error;
         }

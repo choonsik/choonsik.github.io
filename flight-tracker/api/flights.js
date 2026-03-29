@@ -9,9 +9,9 @@
 
 import https from 'https';
 
-const TOKEN_REQUEST_TIMEOUT_MS = 20000;
-const OPENSKY_REQUEST_TIMEOUT_MS = 12000;
-const MAX_NETWORK_RETRIES = 2;
+const TOKEN_REQUEST_TIMEOUT_MS = 8000;
+const OPENSKY_REQUEST_TIMEOUT_MS = 8000;
+const MAX_NETWORK_RETRIES = 1;
 const STALE_CACHE_TTL_MS = 120000;
 const httpsAgent = new https.Agent({ keepAlive: true });
 
@@ -133,15 +133,15 @@ async function fetchFromOpenSky(path, token = null) {
     });
 }
 
-async function withNetworkRetries(requestFn) {
+async function withNetworkRetries(requestFn, maxRetries = MAX_NETWORK_RETRIES) {
     let lastError = null;
-    for (let attempt = 0; attempt <= MAX_NETWORK_RETRIES; attempt++) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
             return await requestFn();
         } catch (error) {
             lastError = error;
             const retryable = isTransientNetworkError(error) || String(error.message || '').includes('timeout');
-            if (!retryable || attempt === MAX_NETWORK_RETRIES) {
+            if (!retryable || attempt === maxRetries) {
                 throw lastError;
             }
 
@@ -203,8 +203,9 @@ export default async function handler(req, res) {
         // OpenSky API 호출: 인증 모드 우선, 실패 시 비인증 폴백
         let data;
         try {
-            const token = await withNetworkRetries(() => getTokenFromOpenSky(clientId, clientSecret));
-            data = await withNetworkRetries(() => fetchFromOpenSky(path, token));
+            // 인증 경로는 빠르게 실패하도록 재시도 최소화
+            const token = await withNetworkRetries(() => getTokenFromOpenSky(clientId, clientSecret), 0);
+            data = await withNetworkRetries(() => fetchFromOpenSky(path, token), 0);
         } catch (authPathError) {
             const retryableAuthFailure =
                 isTransientNetworkError(authPathError) ||
@@ -215,7 +216,8 @@ export default async function handler(req, res) {
             }
 
             // 인증 경로가 일시적으로 실패하면 비인증 조회로 폴백
-            data = await withNetworkRetries(() => fetchFromOpenSky(path, null));
+            // 비인증 폴백도 단일 시도 후 실패 처리
+            data = await withNetworkRetries(() => fetchFromOpenSky(path, null), 0);
         }
 
         lastSuccessfulPayload = data;
