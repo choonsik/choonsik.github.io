@@ -78,8 +78,12 @@ class MapManager {
      * @param {number} rotation - 회전 각도 (도)
      */
     getAircraftSVG(color, rotation) {
-        return `<svg viewBox="0 0 24 24" fill="${color}" transform="rotate(${rotation})" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path>
+        return `<svg viewBox="0 0 64 64" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));">
+            <g transform="rotate(${rotation} 32 32)">
+                <path fill="${color}" d="M32 6 L38 24 L56 29 L56 35 L38 40 L32 58 L26 40 L8 35 L8 29 L26 24 Z" />
+                <path fill="${color}" d="M29 24 L35 24 L36 42 L28 42 Z" opacity="0.95" />
+                <circle cx="32" cy="18" r="3" fill="#ffffff" opacity="0.75" />
+            </g>
         </svg>`;
     }
     
