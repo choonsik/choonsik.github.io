@@ -3,6 +3,7 @@ import cors from "cors";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+let server = null;
 
 const TOKEN_URL =
   "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
@@ -37,6 +38,15 @@ app.use(
     }
   })
 );
+
+// Railway 기본 헬스체크 경로 대응
+app.get("/", (_req, res) => {
+  res.json({ ok: true, service: "flight-proxy" });
+});
+
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "flight-proxy" });
+});
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
   const controller = new AbortController();
@@ -310,6 +320,24 @@ app.get("/api/flights", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+server = app.listen(PORT, () => {
   console.log(`flight-proxy running on port ${PORT}`);
 });
+
+function gracefulShutdown(signal) {
+  console.log(`Received ${signal}. Shutting down gracefully...`);
+  if (!server) {
+    process.exit(0);
+    return;
+  }
+
+  server.close(() => {
+    process.exit(0);
+  });
+
+  // Force close if graceful shutdown hangs.
+  setTimeout(() => process.exit(0), 5000);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
