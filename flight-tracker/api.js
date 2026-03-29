@@ -59,8 +59,13 @@ class FlightsAPI {
             
             const data = await response.json();
             this.retryCount = 0; // 성공 시 재시도 카운터 리셋
-            
-            return data.states || [];
+
+            // 비정상 응답에서도 항상 배열을 반환하도록 보장
+            if (Array.isArray(data?.states)) {
+                return data.states;
+            }
+
+            return [];
         } catch (error) {
             console.error('❌ getAllStates 오류:', error.message);
             throw error;
@@ -94,11 +99,13 @@ function initializeAPI() {
  * API 호출 래퍼 (에러 처리 및 재시도 로직 포함)
  */
 async function fetchFlightsWithRetry(options = {}, maxRetries = 2) {
+    let lastError = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
             const states = await apiClient.getAllStates(options);
             return states;
         } catch (error) {
+            lastError = error;
             if (error.message.includes('429') && attempt < maxRetries) {
                 // Rate limit 초과 시 대기 후 재시도
                 const waitTime = Math.pow(2, attempt) * 5000; // 5s, 10s, 20s
@@ -110,10 +117,14 @@ async function fetchFlightsWithRetry(options = {}, maxRetries = 2) {
                     const waitTime = 1000 * (attempt + 1);
                     console.warn(`🔄 네트워크 오류. ${waitTime}ms 후 재시도...`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
+                } else {
+                    throw error;
                 }
             } else {
                 throw error;
             }
         }
     }
+
+    throw lastError || new Error('알 수 없는 API 오류');
 }

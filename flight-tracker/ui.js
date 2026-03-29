@@ -277,12 +277,13 @@ async function startPolling() {
             
             // API에서 항공기 상태 조회
             const states = await fetchFlightsWithRetry();
+            const safeStates = Array.isArray(states) ? states : [];
             
             // 데이터 업데이트
             const newFlights = [];
             const seenICAO24 = new Set();
             
-            for (const state of states) {
+            for (const state of safeStates) {
                 const flight = flightStore.updateFlight(state);
                 if (flight) {
                     newFlights.push(flight);
