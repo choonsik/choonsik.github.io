@@ -1,11 +1,5 @@
 /**
- * OpenSky Network API 프록시 호출
- * 
- * 이 파일은 Vercel 서버리스 함수 (/api/flights)를 통해
- * 안전하게 OpenSky API를 호출합니다.
- * 
- * CLIENT_ID와 CLIENT_SECRET은 서버에만 보관되며,
- * 프론트엔드에는 절대 노출되지 않습니다.
+ * 공개 ADS-B API 직통 호출
  */
 
 class FlightsAPI {
@@ -19,6 +13,11 @@ class FlightsAPI {
     }
 
     buildRequestUrl(baseUrl, options = {}) {
+        if (baseUrl.includes('/v2/point')) {
+            const [lat, lon, radius] = this.getPointQuery(options);
+            return `${baseUrl.replace(/\/$/, '')}/${lat}/${lon}/${radius}`;
+        }
+
         let url = baseUrl;
         const params = new URLSearchParams();
 
@@ -38,7 +37,85 @@ class FlightsAPI {
         return url;
     }
 
-    async fetchStatesFromUrl(url) {
+    getPointQuery(options = {}) {
+        if (Array.isArray(options.bounding) && options.bounding.length === 4) {
+            const [latMin, lonMin, latMax, lonMax] = options.bounding.map(Number);
+            if ([latMin, lonMin, latMax, lonMax].every(Number.isFinite)) {
+                const centerLat = (latMin + latMax) / 2;
+                const centerLon = (lonMin + lonMax) / 2;
+                const latKm = Math.abs(latMax - latMin) * 111;
+                const lonKm = Math.abs(lonMax - lonMin) * 111 * Math.cos((centerLat * Math.PI) / 180);
+                const radius = Math.min(600, Math.max(30, Math.ceil(Math.max(latKm, lonKm) / 2) + 40));
+                return [centerLat.toFixed(4), centerLon.toFixed(4), radius];
+            }
+        }
+
+        return ['36.8000', '127.8000', 450];
+    }
+
+    adsbAcToState(ac) {
+        const icao24 = String(ac?.hex || '').toLowerCase();
+        const lat = Number(ac?.lat);
+        const lon = Number(ac?.lon);
+        if (!icao24 || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+            return null;
+        }
+
+        const nowSec = Math.floor(Date.now() / 1000);
+        const seen = Number.isFinite(ac?.seen) ? ac.seen : 0;
+        const seenPos = Number.isFinite(ac?.seen_pos) ? ac.seen_pos : seen;
+
+        const onGround = ac?.alt_baro === 'ground' || ac?.on_ground === true;
+        const baroAlt = onGround ? 0 : (Number.isFinite(ac?.alt_baro) ? Number(ac.alt_baro) : null);
+        const geoAlt = Number.isFinite(ac?.alt_geom) ? Number(ac.alt_geom) : null;
+
+        const speedKt = Number.isFinite(ac?.gs) ? Number(ac.gs) : null;
+        const velocityMps = speedKt === null ? null : Number((speedKt / 1.94384).toFixed(2));
+
+        const baroRateFpm = Number.isFinite(ac?.baro_rate) ? Number(ac.baro_rate) : null;
+        const verticalRateMps = baroRateFpm === null ? null : Number((baroRateFpm / 196.85).toFixed(2));
+
+        return [
+            icao24,
+            String(ac?.flight || '').trim(),
+            'Unknown',
+            Math.max(0, Math.floor(nowSec - seenPos)),
+            Math.max(0, Math.floor(nowSec - seen)),
+            lon,
+            lat,
+            baroAlt,
+            Boolean(onGround),
+            velocityMps,
+            Number.isFinite(ac?.track) ? Number(ac.track) : null,
+            verticalRateMps,
+            null,
+            geoAlt,
+            ac?.squawk ? String(ac.squawk) : null
+        ];
+    }
+
+    normalizeStates(payload, options = {}) {
+        // Proxy-compatible payload
+        if (Array.isArray(payload?.states)) {
+            return payload.states;
+        }
+
+        // ADS-B payload
+        if (Array.isArray(payload?.ac)) {
+            let states = payload.ac.map((ac) => this.adsbAcToState(ac)).filter(Boolean);
+
+            if (options.icao24) {
+                const target = String(options.icao24).toLowerCase();
+                states = states.filter((s) => String(s[0]).toLowerCase() === target);
+            }
+
+            return states;
+        }
+
+        return [];
+    }
+
+    async fetchStatesFromUrl(url, options = {}) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 9000);
 
@@ -59,7 +136,7 @@ class FlightsAPI {
             }
 
             const data = await response.json();
-            return Array.isArray(data?.states) ? data.states : [];
+            return this.normalizeStates(data, options);
         } finally {
             clearTimeout(timeoutId);
         }
@@ -101,7 +178,7 @@ class FlightsAPI {
             for (const baseUrl of this.apiUrls) {
                 const url = this.buildRequestUrl(baseUrl, options);
                 try {
-                    const states = await this.fetchStatesFromUrl(url);
+                    const states = await this.fetchStatesFromUrl(url, options);
                     this.retryCount = 0;
                     this.lastSuccessfulStates = states;
                     this.lastSuccessfulAt = Date.now();
@@ -151,12 +228,6 @@ class FlightsAPI {
 
 /**
  * API 인스턴스 생성 (글로벌)
- * 
- * Vercel에서 배포할 때:
- *   - `/api/flights` 엔드포인트 사용
- * 
- * 로컬 개발할 때:
- *   - http://localhost:8000/api/flights 또는 프록시 서버 필요
  */
 let apiClient = null;
 
@@ -165,30 +236,18 @@ function initializeAPI() {
     const hostname = window.location.hostname;
     const isDev = hostname === 'localhost';
     const isGithubPages = hostname.endsWith('github.io');
-    const isVercel = hostname.endsWith('vercel.app');
     const customApiBase = window.FLIGHT_TRACKER_API_BASE;
-    const railwayBase = 'https://endearing-solace-production.up.railway.app';
-    const vercelBase = 'https://choonsik-github-io.vercel.app';
+    const directProviders = [
+        'https://api.adsb.lol/v2/point',
+        'https://api.airplanes.live/v2/point'
+    ];
 
-    let apiUrls = ['/api/flights'];
-    if (isDev) {
-        apiUrls = [
-            'http://localhost:3000/api/flights',
-            `${railwayBase}/api/flights`
-        ];
-    } else if (isGithubPages) {
-        // GitHub Pages에서는 외부 프록시를 순차 폴백으로 사용
-        const preferredBase = (customApiBase || railwayBase).replace(/\/$/, '');
-        apiUrls = [
-            `${preferredBase}/api/flights`,
-            `${vercelBase}/api/flights`
-        ];
-    } else if (isVercel) {
-        // Vercel 직접 배포는 same-origin 우선 + Railway 폴백
-        apiUrls = [
-            '/api/flights',
-            `${railwayBase}/api/flights`
-        ];
+    let apiUrls = directProviders;
+    if (customApiBase) {
+        // 사용자 지정 베이스가 있으면 최우선으로 사용
+        apiUrls = [`${customApiBase.replace(/\/$/, '')}/v2/point`, ...directProviders];
+    } else if (isDev || isGithubPages) {
+        apiUrls = directProviders;
     }
 
     // 중복 제거
