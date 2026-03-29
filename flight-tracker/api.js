@@ -9,12 +9,82 @@
  */
 
 class FlightsAPI {
-    constructor(apiUrl = '/api/flights') {
-        this.apiUrl = apiUrl;
+    constructor(apiUrls = ['/api/flights']) {
+        this.apiUrls = Array.isArray(apiUrls) ? apiUrls : [apiUrls];
         this.retryCount = 0;
         this.maxRetries = 3;
         this.lastSuccessfulStates = [];
         this.lastSuccessfulAt = 0;
+        this.snapshotStorageKey = 'flight-tracker:last-states';
+    }
+
+    buildRequestUrl(baseUrl, options = {}) {
+        let url = baseUrl;
+        const params = new URLSearchParams();
+
+        if (options.bounding) {
+            const [latMin, lonMin, latMax, lonMax] = options.bounding;
+            params.append('bounding', `${latMin},${lonMin},${latMax},${lonMax}`);
+        }
+
+        if (options.icao24) {
+            params.append('icao24', options.icao24);
+        }
+
+        if (params.toString()) {
+            url += '?' + params.toString();
+        }
+
+        return url;
+    }
+
+    async fetchStatesFromUrl(url) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 9000);
+
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+
+            if (response.status === 401) {
+                throw new Error('인증 실패: 서버 자격증명 확인 필요');
+            }
+
+            if (response.status === 429) {
+                throw new Error('Rate limit 초과: 요청 간격을 늘려주세요');
+            }
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`API 요청 실패: ${response.status} ${errorData.message || response.statusText}`);
+            }
+
+            const data = await response.json();
+            return Array.isArray(data?.states) ? data.states : [];
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    saveSnapshot(states) {
+        try {
+            localStorage.setItem(this.snapshotStorageKey, JSON.stringify({
+                at: Date.now(),
+                states
+            }));
+        } catch {
+            // Ignore storage failures in private mode or quota-limited browsers.
+        }
+    }
+
+    loadSnapshot() {
+        try {
+            const raw = localStorage.getItem(this.snapshotStorageKey);
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed?.states) ? parsed.states : [];
+        } catch {
+            return [];
+        }
     }
     
     /**
@@ -25,73 +95,56 @@ class FlightsAPI {
      * @returns {Promise<Array>} 항공기 상태 배열
      */
     async getAllStates(options = {}) {
+        let lastError = null;
+
         try {
-            let url = this.apiUrl;
-            const params = new URLSearchParams();
-            
-            // 바운딩 박스 지정 (선택사항)
-            if (options.bounding) {
-                const [latMin, lonMin, latMax, lonMax] = options.bounding;
-                params.append('bounding', `${latMin},${lonMin},${latMax},${lonMax}`);
-            }
-            
-            // 특정 항공기 지정 (선택사항)
-            if (options.icao24) {
-                params.append('icao24', options.icao24);
-            }
-            
-            if (params.toString()) {
-                url += '?' + params.toString();
-            }
-            
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            for (const baseUrl of this.apiUrls) {
+                const url = this.buildRequestUrl(baseUrl, options);
+                try {
+                    const states = await this.fetchStatesFromUrl(url);
+                    this.retryCount = 0;
+                    this.lastSuccessfulStates = states;
+                    this.lastSuccessfulAt = Date.now();
+                    this.saveSnapshot(states);
+                    return states;
+                } catch (error) {
+                    lastError = error;
+                    const message = String(error.message || '');
+                    const isRetryable =
+                        error.name === 'AbortError' ||
+                        message.includes('Failed to fetch') ||
+                        message.includes('NetworkError') ||
+                        message.includes('API 요청 실패: 5');
 
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            
-            if (response.status === 401) {
-                throw new Error('인증 실패: 서버 자격증명 확인 필요');
-            }
-            
-            if (response.status === 429) {
-                throw new Error('Rate limit 초과: 요청 간격을 늘려주세요');
-            }
-            
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(`API 요청 실패: ${response.status} ${errorData.message || response.statusText}`);
-            }
-            
-            const data = await response.json();
-            this.retryCount = 0; // 성공 시 재시도 카운터 리셋
-
-            // 비정상 응답에서도 항상 배열을 반환하도록 보장
-            if (Array.isArray(data?.states)) {
-                this.lastSuccessfulStates = data.states;
-                this.lastSuccessfulAt = Date.now();
-                return data.states;
-            }
-
-            return [];
-        } catch (error) {
-            if (error.name === 'AbortError') {
-                if (this.lastSuccessfulStates.length > 0) {
-                    console.warn('⚠️ 네트워크 요청 시간 초과 - 최근 데이터로 폴백');
-                    return this.lastSuccessfulStates;
+                    if (!isRetryable) {
+                        throw error;
+                    }
                 }
-                throw new Error('네트워크 요청 시간 초과');
             }
-
-            // 일시적 네트워크 오류 시 최근 성공 데이터로 폴백
+        } catch (error) {
             const msg = String(error.message || '');
             if ((msg.includes('Failed to fetch') || msg.includes('NetworkError')) && this.lastSuccessfulStates.length > 0) {
                 console.warn('⚠️ 네트워크 오류 - 최근 데이터로 폴백');
                 return this.lastSuccessfulStates;
             }
-            console.error('❌ getAllStates 오류:', error.message);
-            throw error;
+            lastError = error;
         }
+
+        if (this.lastSuccessfulStates.length > 0) {
+            console.warn('⚠️ 실시간 호출 실패 - 최근 메모리 데이터로 폴백');
+            return this.lastSuccessfulStates;
+        }
+
+        const snapshotStates = this.loadSnapshot();
+        if (snapshotStates.length > 0) {
+            console.warn('⚠️ 실시간 호출 실패 - 저장된 스냅샷 데이터로 폴백');
+            this.lastSuccessfulStates = snapshotStates;
+            this.lastSuccessfulAt = Date.now();
+            return snapshotStates;
+        }
+
+        console.error('❌ getAllStates 오류:', lastError?.message || 'unknown error');
+        throw lastError || new Error('실시간 API 호출 실패');
     }
 }
 
@@ -113,22 +166,35 @@ function initializeAPI() {
     const isGithubPages = hostname.endsWith('github.io');
     const isVercel = hostname.endsWith('vercel.app');
     const customApiBase = window.FLIGHT_TRACKER_API_BASE;
-    const defaultProxyBase = 'https://endearing-solace-production.up.railway.app';
+    const railwayBase = 'https://endearing-solace-production.up.railway.app';
+    const vercelBase = 'https://choonsik-github-io.vercel.app';
 
-    let apiUrl = '/api/flights';
+    let apiUrls = ['/api/flights'];
     if (isDev) {
-        apiUrl = 'http://localhost:3000/api/flights';
+        apiUrls = [
+            'http://localhost:3000/api/flights',
+            `${railwayBase}/api/flights`
+        ];
     } else if (isGithubPages) {
-        // GitHub Pages는 서버리스 함수가 없으므로 Vercel API 프록시를 사용
-        const base = customApiBase || defaultProxyBase;
-        apiUrl = `${base.replace(/\/$/, '')}/api/flights`;
+        // GitHub Pages에서는 외부 프록시를 순차 폴백으로 사용
+        const preferredBase = (customApiBase || railwayBase).replace(/\/$/, '');
+        apiUrls = [
+            `${preferredBase}/api/flights`,
+            `${vercelBase}/api/flights`
+        ];
     } else if (isVercel) {
-        // Vercel에 직접 배포된 경우 같은 오리진의 서버리스 함수를 사용
-        apiUrl = '/api/flights';
+        // Vercel 직접 배포는 same-origin 우선 + Railway 폴백
+        apiUrls = [
+            '/api/flights',
+            `${railwayBase}/api/flights`
+        ];
     }
+
+    // 중복 제거
+    apiUrls = [...new Set(apiUrls)];
     
-    apiClient = new FlightsAPI(apiUrl);
-    console.log(`🔌 API 초기화: ${apiUrl}`);
+    apiClient = new FlightsAPI(apiUrls);
+    console.log('🔌 API 초기화:', apiUrls);
     return apiClient;
 }
 
