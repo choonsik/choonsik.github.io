@@ -134,8 +134,12 @@ class MapManager {
             popupAnchor: [0, this.selectedMarker?.icao24 === flight.icao24 ? -20 : -15]
         }));
         
-        // 제목 업데이트
-        marker.setTitle(flight.callsign || flight.icao24);
+        // 제목 업데이트 (Leaflet Marker에는 setTitle 메서드가 없음)
+        marker.options.title = flight.callsign || flight.icao24;
+        const markerEl = marker.getElement();
+        if (markerEl) {
+            markerEl.setAttribute('title', marker.options.title);
+        }
         
         return marker;
     }
