@@ -5,7 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "build": "echo \"No build step required\"",
+    "build": "rm -rf public && mkdir -p public && cp index.html style.css api.js flights.js map.js ui.js public/",
     "dev": "node api/dev-server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
