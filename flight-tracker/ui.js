@@ -274,9 +274,22 @@ async function startPolling() {
     const poll = async () => {
         try {
             uiController.setLoadingSpinner(true);
+
+            let queryOptions = {};
+            if (mapManager?.map) {
+                const bounds = mapManager.map.getBounds();
+                queryOptions = {
+                    bounding: [
+                        bounds.getSouth(),
+                        bounds.getWest(),
+                        bounds.getNorth(),
+                        bounds.getEast()
+                    ]
+                };
+            }
             
             // API에서 항공기 상태 조회
-            const states = await fetchFlightsWithRetry();
+            const states = await fetchFlightsWithRetry(queryOptions);
             const safeStates = Array.isArray(states) ? states : [];
             
             // 데이터 업데이트

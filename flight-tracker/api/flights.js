@@ -11,6 +11,7 @@ import https from 'https';
 
 const REQUEST_TIMEOUT_MS = 12000;
 const MAX_NETWORK_RETRIES = 2;
+const STALE_CACHE_TTL_MS = 120000;
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,6 +33,8 @@ function isTransientNetworkError(error) {
  */
 let cachedToken = null;
 let tokenExpiresAt = null;
+let lastSuccessfulPayload = null;
+let lastSuccessfulAt = 0;
 
 async function getTokenFromOpenSky(clientId, clientSecret) {
     // 유효한 토큰이 있으면 반환
@@ -195,6 +198,9 @@ export default async function handler(req, res) {
         
         // OpenSky API 호출
         const data = await withNetworkRetries(() => fetchFromOpenSky(path, token));
+
+        lastSuccessfulPayload = data;
+        lastSuccessfulAt = Date.now();
         
         // 응답
         res.status(200).json(data);
@@ -210,6 +216,14 @@ export default async function handler(req, res) {
         }
         
         if (isTransientNetworkError(error) || String(error.message || '').includes('timeout')) {
+            if (lastSuccessfulPayload && Date.now() - lastSuccessfulAt <= STALE_CACHE_TTL_MS) {
+                return res.status(200).json({
+                    ...lastSuccessfulPayload,
+                    stale: true,
+                    staleAgeMs: Date.now() - lastSuccessfulAt
+                });
+            }
+
             return res.status(503).json({
                 error: 'Upstream network timeout',
                 message: '네트워크 타임아웃이 발생했습니다. 잠시 후 자동 재시도됩니다.'
