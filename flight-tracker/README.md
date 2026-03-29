@@ -7,7 +7,7 @@ OpenSky Network API를 사용하여 전 세계 항공기의 실시간 위치를 
 - **실시간 항공기 위치 추적** — 5초마다 자동 갱신되는 Leaflet 지도상 마커 표시
 - **검색 및 필터** — 콜사인, 국가, 고도 범위로 항공기 검색
 - **상세 정보 표시** — 클릭하면 고도, 속도, 진행방향, 위치 등 상세 정보
-- **자동 갱신** — OAuth2 토큰 자동 관리, 네트워크 오류 시 자동 재시도
+- **자동 갱신** — 서버리스 프록시 기반 API 호출, 네트워크 오류 시 자동 재시도
 - **반응형 디자인** — 데스크톱 및 모바일 환경 지원
 
 ## 🚀 빠른 시작
@@ -27,12 +27,12 @@ OpenSky Network API를 사용하여 전 세계 항공기의 실시간 위치를 
 
 ### 3. 자격증명 적용
 
-[ui.js](ui.js) 파일의 320-321번 줄을 수정하세요:
+프론트엔드 파일은 수정하지 않습니다. Vercel 환경변수에만 설정하세요.
 
-```javascript
-const CLIENT_ID = 'YOUR_CLIENT_ID';      // ← 복사한 Client ID
-const CLIENT_SECRET = 'YOUR_CLIENT_SECRET'; // ← 복사한 Client Secret
-```
+- `OPENSKY_CLIENT_ID`
+- `OPENSKY_CLIENT_SECRET`
+
+자세한 단계는 [DEPLOYMENT.md](DEPLOYMENT.md)를 참고하세요.
 
 ### 4. 로컬 테스트 (개발 환경)
 
@@ -49,8 +49,8 @@ python3 -m http.server 8000
 |------|------|
 | **프론트엔드** | HTML5, CSS3, Vanilla JavaScript |
 | **지도 라이브러리** | Leaflet.js + OpenStreetMap |
-| **API** | OpenSky Network (REST) |
-| **인증** | OAuth2 Client Credentials Flow |
+| **API** | OpenSky Network (REST) via Vercel Serverless |
+| **인증** | OAuth2 Client Credentials Flow (서버 측) |
 | **배포** | GitHub Pages |
 
 ## 📁 파일 구조
@@ -59,10 +59,16 @@ python3 -m http.server 8000
 flight-tracker/
 ├── index.html          # 메인 마크업 (Leaflet 지도, 검색폼, 정보 패널)
 ├── style.css           # 스타일시트 (그래디언트, 반응형 레이아웃)
-├── api.js              # OpenSky API 통신 (OAuth2 토큰 관리)
+├── api.js              # 서버리스 프록시 API 호출
+├── api/
+│   ├── flights.js      # Vercel 서버리스 함수 (OpenSky 프록시)
+│   └── dev-server.js   # 로컬 API 개발 서버
 ├── flights.js          # 항공기 데이터 상태 관리 및 필터링
 ├── map.js              # Leaflet 지도 및 마커 제어
 ├── ui.js               # UI 상호작용 및 폴링 로직
+├── package.json        # 로컬 API 서버 실행 스크립트
+├── vercel.json         # Vercel 배포 설정
+├── DEPLOYMENT.md       # 배포 가이드
 └── README.md           # 이 파일
 ```
 
@@ -70,12 +76,12 @@ flight-tracker/
 
 ### 1. 초기화 단계
 - Leaflet 지도 초기화 (한반도 중심)
-- OpenSky API OAuth2 토큰 발급 (유효: 30분)
+- Vercel 서버리스 함수에서 OpenSky OAuth2 토큰 발급 (유효: 30분)
 - UI 컨트롤러 시작
 
 ### 2. 폴링 루프 (5초 간격)
 ```
-OpenSky API → 항공기 상태 배열 조회
+Vercel /api/flights → 항공기 상태 배열 조회
     ↓
 FlightStore에 데이터 업데이트
     ↓
@@ -87,7 +93,7 @@ FlightStore에 데이터 업데이트
 ### 3. 오류 처리
 | 오류 | 처리 |
 |------|------|
-| **401 Unauthorized** | 토큰 만료 → 자동 갱신 후 재요청 |
+| **401 Unauthorized** | 서버 토큰 만료 → 자동 갱신 후 재요청 |
 | **429 Too Many Requests** | Rate limit 초과 → 대기 후 재시도 (5s → 10s → 20s) |
 | **네트워크 오류** | 지수 백오프 재시도 (1s → 2s → 4s) |
 | **API 한계 초과** | 폴링 중지 및 사용자 알림 |
@@ -122,13 +128,13 @@ https://choonsik.github.io/flight-tracker/
 
 ## ⚠️ 보안 정보
 
-**주의**: 프론트엔드에서 `Client Secret`을 노출하고 있습니다. 프로덕션 환경에서는 다음 방법을 권장합니다:
+현재 구조는 민감 정보가 프론트엔드에 노출되지 않도록 구성되어 있습니다.
 
-1. **백엔드 프록시 서버** — 백엔드에서 API 호출 후 프론트엔드로 응답 전달
-2. **환경 변수** — 빌드 시점에 시크릿 주입 (Vercel, Netlify 등)
-3. **Server-Side Rendering** — Next.js 등으로 서버에서 API 호출
+1. 자격증명은 Vercel 환경변수에만 저장
+2. 브라우저는 `/api/flights`만 호출
+3. OpenSky 실제 인증은 서버리스 함수에서 처리
 
-현재 구조는 **개인 프로젝트 및 데모 용도**로만 권장됩니다.
+주의: API 요청량이 많아지면 OpenSky 및 Vercel 사용량 한도를 함께 모니터링하세요.
 
 ## 📊 오픈소스 라이선스
 

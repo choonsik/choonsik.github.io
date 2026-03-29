@@ -47,6 +47,8 @@ git commit -m "Add secure Vercel API proxy for flight tracking
 git push origin main
 ```
 
+주의: Vercel에서 이 저장소를 Import한 뒤, 프로젝트 Settings에서 `Root Directory`를 `flight-tracker`로 지정하세요.
+
 ### 2단계: Vercel 연결 및 배포
 
 #### 2-1. Vercel 가입
@@ -96,7 +98,7 @@ https://choonsik.github.io/flight-tracker/
 ### 터미널 1: Vercel 함수 에뮬레이션
 
 ```bash
-cd /Users/choonsik/Documents/choonsik.github.io
+cd /Users/choonsik/Documents/choonsik.github.io/flight-tracker
 
 # 환경변수 설정
 export OPENSKY_CLIENT_ID="발급받은_CLIENT_ID"
