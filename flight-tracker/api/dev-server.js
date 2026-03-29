@@ -164,7 +164,7 @@ const server = http.createServer(async (req, res) => {
             query.append('icao24', parsedUrl.query.icao24);
         }
         
-        const path = `/api/v1/states/all${query.toString() ? '?' + query.toString() : ''}`;
+        const path = `/api/states/all${query.toString() ? '?' + query.toString() : ''}`;
         
         // OpenSky API 호출
         const data = await fetchFromOpenSky(path, token);

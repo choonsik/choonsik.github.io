@@ -198,7 +198,7 @@ export default async function handler(req, res) {
             query.append('icao24', icao24);
         }
         
-        const path = `/api/v1/states/all${query.toString() ? '?' + query.toString() : ''}`;
+        const path = `/api/states/all${query.toString() ? '?' + query.toString() : ''}`;
 
         // OpenSky API 호출: 인증 모드 우선, 실패 시 비인증 폴백
         let data;
