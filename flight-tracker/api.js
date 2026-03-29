@@ -13,6 +13,8 @@ class FlightsAPI {
         this.apiUrl = apiUrl;
         this.retryCount = 0;
         this.maxRetries = 3;
+        this.lastSuccessfulStates = [];
+        this.lastSuccessfulAt = 0;
     }
     
     /**
@@ -66,13 +68,26 @@ class FlightsAPI {
 
             // 비정상 응답에서도 항상 배열을 반환하도록 보장
             if (Array.isArray(data?.states)) {
+                this.lastSuccessfulStates = data.states;
+                this.lastSuccessfulAt = Date.now();
                 return data.states;
             }
 
             return [];
         } catch (error) {
             if (error.name === 'AbortError') {
+                if (this.lastSuccessfulStates.length > 0) {
+                    console.warn('⚠️ 네트워크 요청 시간 초과 - 최근 데이터로 폴백');
+                    return this.lastSuccessfulStates;
+                }
                 throw new Error('네트워크 요청 시간 초과');
+            }
+
+            // 일시적 네트워크 오류 시 최근 성공 데이터로 폴백
+            const msg = String(error.message || '');
+            if ((msg.includes('Failed to fetch') || msg.includes('NetworkError')) && this.lastSuccessfulStates.length > 0) {
+                console.warn('⚠️ 네트워크 오류 - 최근 데이터로 폴백');
+                return this.lastSuccessfulStates;
             }
             console.error('❌ getAllStates 오류:', error.message);
             throw error;
