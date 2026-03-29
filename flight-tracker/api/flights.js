@@ -11,6 +11,11 @@ const STATES_BASE_URLS = [
     'https://api.opensky-network.org/api/states/all'
 ];
 
+export const config = {
+    runtime: 'nodejs',
+    regions: ['fra1']
+};
+
 const TOKEN_TIMEOUT_MS = 7000;
 const DATA_TIMEOUT_MS = 7000;
 const AUTH_FLOW_HARD_TIMEOUT_MS = 8000;
