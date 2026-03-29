@@ -10,7 +10,6 @@
 
 import https from 'https';
 import http from 'http';
-import url from 'url';
 
 const PORT = 3000;
 
@@ -122,7 +121,7 @@ const server = http.createServer(async (req, res) => {
     
     try {
         // /api/flights 엔드포인트만 처리
-        const parsedUrl = url.parse(req.url, true);
+        const parsedUrl = new URL(req.url, `http://localhost:${PORT}`);
         
         if (parsedUrl.pathname !== '/api/flights') {
             res.writeHead(404);
@@ -152,16 +151,19 @@ const server = http.createServer(async (req, res) => {
         // 요청 쿼리 파라미터
         const query = new URLSearchParams();
         
-        if (parsedUrl.query.bounding) {
-            const parts = parsedUrl.query.bounding.split(',').map(Number);
+        const bounding = parsedUrl.searchParams.get('bounding');
+        const icao24 = parsedUrl.searchParams.get('icao24');
+
+        if (bounding) {
+            const parts = bounding.split(',').map(Number);
             query.append('lamin', parts[0]);
             query.append('lomin', parts[1]);
             query.append('lamax', parts[2]);
             query.append('lomax', parts[3]);
         }
         
-        if (parsedUrl.query.icao24) {
-            query.append('icao24', parsedUrl.query.icao24);
+        if (icao24) {
+            query.append('icao24', icao24);
         }
         
         const path = `/api/states/all${query.toString() ? '?' + query.toString() : ''}`;
