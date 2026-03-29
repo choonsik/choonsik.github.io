@@ -6,7 +6,10 @@
  */
 
 const TOKEN_URL = 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
-const STATES_BASE_URL = 'https://opensky-network.org/api/states/all';
+const STATES_BASE_URLS = [
+    'https://opensky-network.org/api/states/all',
+    'https://api.opensky-network.org/api/states/all'
+];
 
 const TOKEN_TIMEOUT_MS = 7000;
 const DATA_TIMEOUT_MS = 7000;
@@ -111,9 +114,19 @@ async function getTokenFromOpenSky(clientId, clientSecret) {
 }
 
 async function fetchStatesFromOpenSky(query, token = null) {
-    const url = `${STATES_BASE_URL}${query ? `?${query}` : ''}`;
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    return fetchJson(url, { method: 'GET', headers }, DATA_TIMEOUT_MS);
+    let lastError = null;
+
+    for (const baseUrl of STATES_BASE_URLS) {
+        const url = `${baseUrl}${query ? `?${query}` : ''}`;
+        try {
+            return await fetchJson(url, { method: 'GET', headers }, DATA_TIMEOUT_MS);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError || new Error('OpenSky states request failed');
 }
 
 function buildQuery(req) {
