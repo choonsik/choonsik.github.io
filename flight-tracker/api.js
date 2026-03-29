@@ -113,7 +113,7 @@ function initializeAPI() {
     const isGithubPages = hostname.endsWith('github.io');
     const isVercel = hostname.endsWith('vercel.app');
     const customApiBase = window.FLIGHT_TRACKER_API_BASE;
-    const defaultProxyBase = 'https://choonsik-github-io.vercel.app';
+    const defaultProxyBase = 'https://endearing-solace-production.up.railway.app';
 
     let apiUrl = '/api/flights';
     if (isDev) {
