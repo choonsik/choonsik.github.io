@@ -7,7 +7,7 @@
  * 프론트엔드에는 노출하지 않습니다.
  */
 
-const https = require('https');
+import https from 'https';
 
 /**
  * OAuth2 토큰 발급 (메모리 캐싱)
@@ -100,7 +100,7 @@ async function fetchFromOpenSky(path, token) {
 /**
  * 메인 핸들러
  */
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
     // CORS 헤더
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -129,16 +129,20 @@ module.exports = async (req, res) => {
         // 요청 쿼리 파라미터
         const query = new URLSearchParams();
         
-        if (req.query.bounding) {
-            const [latMin, lonMin, latMax, lonMax] = req.query.bounding.split(',').map(Number);
+        const requestUrl = new URL(req.url, 'http://localhost');
+        const bounding = req.query?.bounding || requestUrl.searchParams.get('bounding');
+        const icao24 = req.query?.icao24 || requestUrl.searchParams.get('icao24');
+
+        if (bounding) {
+            const [latMin, lonMin, latMax, lonMax] = bounding.split(',').map(Number);
             query.append('lamin', latMin);
             query.append('lomin', lonMin);
             query.append('lamax', latMax);
             query.append('lomax', lonMax);
         }
         
-        if (req.query.icao24) {
-            query.append('icao24', req.query.icao24);
+        if (icao24) {
+            query.append('icao24', icao24);
         }
         
         const path = `/api/v1/states/all${query.toString() ? '?' + query.toString() : ''}`;
@@ -164,4 +168,4 @@ module.exports = async (req, res) => {
             message: error.message
         });
     }
-};
+}
