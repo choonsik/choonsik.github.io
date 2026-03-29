@@ -144,7 +144,8 @@ class FlightsAPI {
         }
 
         console.error('❌ getAllStates 오류:', lastError?.message || 'unknown error');
-        throw lastError || new Error('실시간 API 호출 실패');
+        console.warn('⚠️ 모든 API 호출 실패 - 빈 데이터로 안전 폴백');
+        return [];
     }
 }
 
