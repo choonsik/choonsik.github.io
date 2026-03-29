@@ -240,12 +240,9 @@ async function initializeApp() {
         // 1. 지도 초기화
         initializeMap();
         
-        // 2. API 초기화
-        // ⚠️ 아래에 OpenSky Network credentials를 입력하세요
-        const CLIENT_ID = 'YOUR_CLIENT_ID'; // https://opensky-network.org/에서 발급받은 ID
-        const CLIENT_SECRET = 'YOUR_CLIENT_SECRET';
-        
-        initializeAPI(CLIENT_ID, CLIENT_SECRET);
+        // 2. API 초기화 (Vercel 서버리스 함수로 안전하게 처리)
+        // CLIENT_ID와 CLIENT_SECRET은 Vercel 환경변수에서 관리됨
+        initializeAPI();
         
         // 3. UI 초기화
         uiController = new UIController();

@@ -1,66 +1,16 @@
 /**
- * OpenSky Network API 통신 및 OAuth2 토큰 관리
+ * OpenSky Network API 프록시 호출
+ * 
+ * 이 파일은 Vercel 서버리스 함수 (/api/flights)를 통해
+ * 안전하게 OpenSky API를 호출합니다.
+ * 
+ * CLIENT_ID와 CLIENT_SECRET은 서버에만 보관되며,
+ * 프론트엔드에는 절대 노출되지 않습니다.
  */
 
-class TokenManager {
-    constructor(clientId, clientSecret) {
-        this.clientId = clientId;
-        this.clientSecret = clientSecret;
-        this.token = null;
-        this.expiresAt = null;
-        this.refreshTimer = null;
-    }
-    
-    /**
-     * 토큰 발급 또는 갱신
-     */
-    async getToken() {
-        // 유효한 토큰이 있으면 반환
-        if (this.token && this.expiresAt && Date.now() < this.expiresAt) {
-            return this.token;
-        }
-        
-        try {
-            const response = await fetch('https://opensky-network.org/api/v1/oauth/token', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `client_id=${encodeURIComponent(this.clientId)}&client_secret=${encodeURIComponent(this.clientSecret)}&grant_type=client_credentials`
-            });
-            
-            if (!response.ok) {
-                throw new Error(`OAuth2 토큰 획득 실패: ${response.status} ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            this.token = data.access_token;
-            // expires_in은 초 단위, 30초 여유를 두고 갱신
-            this.expiresAt = Date.now() + (data.expires_in - 30) * 1000;
-            
-            console.log('✅ OAuth2 토큰 획득 성공 (유효: ' + Math.round((this.expiresAt - Date.now()) / 1000) + '초)');
-            
-            return this.token;
-        } catch (error) {
-            console.error('❌ 토큰 획득 오류:', error.message);
-            throw error;
-        }
-    }
-    
-    /**
-     * 토큰 초기화 (강제 갱신)
-     */
-    invalidate() {
-        this.token = null;
-        this.expiresAt = null;
-    }
-}
-
-class OpenSkyAPI {
-    constructor(clientId, clientSecret, useAuthentication = true) {
-        this.BASE_URL = 'https://opensky-network.org/api/v1';
-        this.useAuthentication = useAuthentication;
-        this.tokenManager = useAuthentication ? new TokenManager(clientId, clientSecret) : null;
+class FlightsAPI {
+    constructor(apiUrl = '/api/flights') {
+        this.apiUrl = apiUrl;
         this.retryCount = 0;
         this.maxRetries = 3;
     }
@@ -74,16 +24,13 @@ class OpenSkyAPI {
      */
     async getAllStates(options = {}) {
         try {
-            let url = `${this.BASE_URL}/states/all`;
+            let url = this.apiUrl;
             const params = new URLSearchParams();
             
             // 바운딩 박스 지정 (선택사항)
             if (options.bounding) {
                 const [latMin, lonMin, latMax, lonMax] = options.bounding;
-                params.append('lamin', latMin);
-                params.append('lomin', lonMin);
-                params.append('lamax', latMax);
-                params.append('lomax', lonMax);
+                params.append('bounding', `${latMin},${lonMin},${latMax},${lonMax}`);
             }
             
             // 특정 항공기 지정 (선택사항)
@@ -95,26 +42,10 @@ class OpenSkyAPI {
                 url += '?' + params.toString();
             }
             
-            // 인증 헤더 준비
-            const headers = {};
-            if (this.useAuthentication) {
-                const token = await this.tokenManager.getToken();
-                headers['Authorization'] = `Bearer ${token}`;
-            }
-            
-            const response = await fetch(url, { headers });
+            const response = await fetch(url);
             
             if (response.status === 401) {
-                // 토큰 만료
-                if (this.useAuthentication) {
-                    this.tokenManager.invalidate();
-                    // 재시도
-                    if (this.retryCount < this.maxRetries) {
-                        this.retryCount++;
-                        return this.getAllStates(options);
-                    }
-                }
-                throw new Error('인증 실패: 토큰이 유효하지 않습니다');
+                throw new Error('인증 실패: 서버 자격증명 확인 필요');
             }
             
             if (response.status === 429) {
@@ -122,7 +53,8 @@ class OpenSkyAPI {
             }
             
             if (!response.ok) {
-                throw new Error(`API 요청 실패: ${response.status} ${response.statusText}`);
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`API 요청 실패: ${response.status} ${errorData.message || response.statusText}`);
             }
             
             const data = await response.json();
@@ -134,51 +66,27 @@ class OpenSkyAPI {
             throw error;
         }
     }
-    
-    /**
-     * 특정 시간 범위의 비행 정보 조회 (과거 데이터)
-     * @param {number} begin - 시작 Unix timestamp
-     * @param {number} end - 종료 Unix timestamp
-     * @param {string} icao24 - 항공기 ICAO24 코드
-     * @returns {Promise<Array>} 비행 정보 배열
-     */
-    async getFlights(begin, end, icao24) {
-        try {
-            let url = `${this.BASE_URL}/flights/aircraft?icao24=${icao24}&begin=${begin}&end=${end}`;
-            
-            const headers = {};
-            if (this.useAuthentication) {
-                const token = await this.tokenManager.getToken();
-                headers['Authorization'] = `Bearer ${token}`;
-            }
-            
-            const response = await fetch(url, { headers });
-            
-            if (!response.ok) {
-                throw new Error(`API 요청 실패: ${response.status}`);
-            }
-            
-            return await response.json();
-        } catch (error) {
-            console.error('❌ getFlights 오류:', error.message);
-            throw error;
-        }
-    }
 }
 
 /**
  * API 인스턴스 생성 (글로벌)
  * 
- * ⚠️ 중요: OpenSky Network 무료 계정 생성 후 client_id와 client_secret을 입력해주세요
- * 회원가입: https://opensky-network.org/
+ * Vercel에서 배포할 때:
+ *   - `/api/flights` 엔드포인트 사용
+ * 
+ * 로컬 개발할 때:
+ *   - http://localhost:8000/api/flights 또는 프록시 서버 필요
  */
 let apiClient = null;
 
-function initializeAPI(clientId, clientSecret) {
-    // 클라이언트와 시크릿이 없으면 비인증 모드 사용
-    const useAuth = !!(clientId && clientSecret && clientId !== 'YOUR_CLIENT_ID');
-    apiClient = new OpenSkyAPI(clientId, clientSecret, useAuth);
-    console.log(`🔌 API 초기화: ${useAuth ? '인증됨 (4000 크레딧/일)' : '비인증 모드 (레이트 제한)'}`);
+function initializeAPI() {
+    // 환경 감지
+    const isDev = !window.location.hostname.includes('vercel.app') && 
+                   window.location.hostname === 'localhost';
+    const apiUrl = isDev ? 'http://localhost:3000/api/flights' : '/api/flights';
+    
+    apiClient = new FlightsAPI(apiUrl);
+    console.log(`🔌 API 초기화: ${apiUrl}`);
     return apiClient;
 }
 

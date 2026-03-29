@@ -1,0 +1,14 @@
+{
+  "name": "flight-tracker",
+  "version": "1.0.0",
+  "description": "Real-time flight tracking with OpenSky Network API",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node api/dev-server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {}
+}

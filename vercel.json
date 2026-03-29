@@ -1,0 +1,13 @@
+{
+  "buildCommand": "npm run build",
+  "env": {
+    "OPENSKY_CLIENT_ID": {
+      "description": "OpenSky Network Client ID (from https://opensky-network.org/)",
+      "required": true
+    },
+    "OPENSKY_CLIENT_SECRET": {
+      "description": "OpenSky Network Client Secret",
+      "required": true
+    }
+  }
+}
