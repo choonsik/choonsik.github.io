@@ -26,6 +26,7 @@ let latestSuccessfulData = null;
 
 const FRESH_CACHE_MS = 45 * 1000;
 const MAX_STALE_CACHE_MS = 15 * 60 * 1000;
+const REQUEST_DEADLINE_MS = 6500;
 
 app.use(
   cors({
@@ -230,6 +231,21 @@ async function fetchStates(query, token = null) {
   throw lastError || new Error("States fetch failed");
 }
 
+async function withDeadline(work, timeoutMs = REQUEST_DEADLINE_MS) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`Proxy deadline exceeded (${timeoutMs}ms)`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([work(), timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 app.get("/api/flights", async (req, res) => {
   const startedAt = Date.now();
 
@@ -254,15 +270,16 @@ app.get("/api/flights", async (req, res) => {
       });
     }
 
-    let data;
-    let liveSource = "token";
-    try {
-      const token = await getToken();
-      data = await fetchStates(query, token);
-    } catch (error) {
-      liveSource = "public";
-      data = await fetchStates(query, null);
-    }
+    const { data, source: liveSource } = await withDeadline(async () => {
+      try {
+        const token = await getToken();
+        const tokenData = await fetchStates(query, token);
+        return { data: tokenData, source: "token" };
+      } catch {
+        const publicData = await fetchStates(query, null);
+        return { data: publicData, source: "public" };
+      }
+    });
 
     const normalized = normalizeData(data);
     setCache(cacheKey, normalized);
@@ -341,3 +358,11 @@ function gracefulShutdown(signal) {
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+process.on("uncaughtException", (error) => {
+  console.error("uncaughtException:", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandledRejection:", reason);
+});
