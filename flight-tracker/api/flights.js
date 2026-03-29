@@ -9,9 +9,11 @@
 
 import https from 'https';
 
-const REQUEST_TIMEOUT_MS = 12000;
+const TOKEN_REQUEST_TIMEOUT_MS = 20000;
+const OPENSKY_REQUEST_TIMEOUT_MS = 12000;
 const MAX_NETWORK_RETRIES = 2;
 const STALE_CACHE_TTL_MS = 120000;
+const httpsAgent = new https.Agent({ keepAlive: true });
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -54,6 +56,7 @@ async function getTokenFromOpenSky(clientId, clientSecret) {
             port: 443,
             path: '/api/v1/oauth/token',
             method: 'POST',
+            agent: httpsAgent,
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(postData)
@@ -75,8 +78,8 @@ async function getTokenFromOpenSky(clientId, clientSecret) {
             });
         });
 
-        req.setTimeout(REQUEST_TIMEOUT_MS, () => {
-            req.destroy(new Error(`Token request timeout (${REQUEST_TIMEOUT_MS}ms)`));
+        req.setTimeout(TOKEN_REQUEST_TIMEOUT_MS, () => {
+            req.destroy(new Error(`Token request timeout (${TOKEN_REQUEST_TIMEOUT_MS}ms)`));
         });
         
         req.on('error', reject);
@@ -88,16 +91,20 @@ async function getTokenFromOpenSky(clientId, clientSecret) {
 /**
  * OpenSky API 호출
  */
-async function fetchFromOpenSky(path, token) {
+async function fetchFromOpenSky(path, token = null) {
     return new Promise((resolve, reject) => {
+        const headers = {};
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
         const options = {
             hostname: 'opensky-network.org',
             port: 443,
             path: path,
             method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+            agent: httpsAgent,
+            headers
         };
         
         const req = https.request(options, (res) => {
@@ -117,8 +124,8 @@ async function fetchFromOpenSky(path, token) {
             });
         });
 
-        req.setTimeout(REQUEST_TIMEOUT_MS, () => {
-            req.destroy(new Error(`OpenSky request timeout (${REQUEST_TIMEOUT_MS}ms)`));
+        req.setTimeout(OPENSKY_REQUEST_TIMEOUT_MS, () => {
+            req.destroy(new Error(`OpenSky request timeout (${OPENSKY_REQUEST_TIMEOUT_MS}ms)`));
         });
         
         req.on('error', reject);
@@ -172,9 +179,6 @@ export default async function handler(req, res) {
             });
         }
         
-        // 토큰 발급
-        const token = await withNetworkRetries(() => getTokenFromOpenSky(clientId, clientSecret));
-        
         // 요청 쿼리 파라미터
         const query = new URLSearchParams();
         
@@ -195,9 +199,24 @@ export default async function handler(req, res) {
         }
         
         const path = `/api/v1/states/all${query.toString() ? '?' + query.toString() : ''}`;
-        
-        // OpenSky API 호출
-        const data = await withNetworkRetries(() => fetchFromOpenSky(path, token));
+
+        // OpenSky API 호출: 인증 모드 우선, 실패 시 비인증 폴백
+        let data;
+        try {
+            const token = await withNetworkRetries(() => getTokenFromOpenSky(clientId, clientSecret));
+            data = await withNetworkRetries(() => fetchFromOpenSky(path, token));
+        } catch (authPathError) {
+            const retryableAuthFailure =
+                isTransientNetworkError(authPathError) ||
+                String(authPathError?.message || '').includes('timeout');
+
+            if (!retryableAuthFailure) {
+                throw authPathError;
+            }
+
+            // 인증 경로가 일시적으로 실패하면 비인증 조회로 폴백
+            data = await withNetworkRetries(() => fetchFromOpenSky(path, null));
+        }
 
         lastSuccessfulPayload = data;
         lastSuccessfulAt = Date.now();
