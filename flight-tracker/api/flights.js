@@ -13,10 +13,28 @@ const TOKEN_REQUEST_TIMEOUT_MS = 8000;
 const OPENSKY_REQUEST_TIMEOUT_MS = 8000;
 const MAX_NETWORK_RETRIES = 1;
 const STALE_CACHE_TTL_MS = 120000;
+const AUTH_FLOW_HARD_TIMEOUT_MS = 9000;
+const DATA_FLOW_HARD_TIMEOUT_MS = 9000;
 const httpsAgent = new https.Agent({ keepAlive: true });
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withHardTimeout(fn, timeoutMs, label) {
+    let timeoutId;
+    try {
+        return await Promise.race([
+            fn(),
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    reject(new Error(`${label} timeout (${timeoutMs}ms)`));
+                }, timeoutMs);
+            })
+        ]);
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 function isTransientNetworkError(error) {
@@ -204,8 +222,16 @@ export default async function handler(req, res) {
         let data;
         try {
             // 인증 경로는 빠르게 실패하도록 재시도 최소화
-            const token = await withNetworkRetries(() => getTokenFromOpenSky(clientId, clientSecret), 0);
-            data = await withNetworkRetries(() => fetchFromOpenSky(path, token), 0);
+            const token = await withHardTimeout(
+                () => withNetworkRetries(() => getTokenFromOpenSky(clientId, clientSecret), 0),
+                AUTH_FLOW_HARD_TIMEOUT_MS,
+                'Auth flow'
+            );
+            data = await withHardTimeout(
+                () => withNetworkRetries(() => fetchFromOpenSky(path, token), 0),
+                DATA_FLOW_HARD_TIMEOUT_MS,
+                'Data flow'
+            );
         } catch (authPathError) {
             const retryableAuthFailure =
                 isTransientNetworkError(authPathError) ||
@@ -217,7 +243,11 @@ export default async function handler(req, res) {
 
             // 인증 경로가 일시적으로 실패하면 비인증 조회로 폴백
             // 비인증 폴백도 단일 시도 후 실패 처리
-            data = await withNetworkRetries(() => fetchFromOpenSky(path, null), 0);
+            data = await withHardTimeout(
+                () => withNetworkRetries(() => fetchFromOpenSky(path, null), 0),
+                DATA_FLOW_HARD_TIMEOUT_MS,
+                'Fallback data flow'
+            );
         }
 
         lastSuccessfulPayload = data;
