@@ -26,7 +26,7 @@ let latestSuccessfulData = null;
 
 const FRESH_CACHE_MS = 45 * 1000;
 const MAX_STALE_CACHE_MS = 15 * 60 * 1000;
-const REQUEST_DEADLINE_MS = 6500;
+const REQUEST_DEADLINE_MS = 9000;
 
 app.use(
   cors({
@@ -113,7 +113,7 @@ async function getToken() {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body
     },
-    3000
+    4500
   );
 
   cachedToken = tokenJson.access_token;
@@ -222,7 +222,7 @@ async function fetchStates(query, token = null) {
   for (const base of STATES_URLS) {
     const url = query ? `${base}?${query}` : base;
     try {
-      return await fetchWithTimeout(url, { headers }, 2500);
+      return await fetchWithTimeout(url, { headers }, 4500);
     } catch (error) {
       lastError = error;
     }
@@ -272,12 +272,12 @@ app.get("/api/flights", async (req, res) => {
 
     const { data, source: liveSource } = await withDeadline(async () => {
       try {
+        const publicData = await fetchStates(query, null);
+        return { data: publicData, source: "public" };
+      } catch {
         const token = await getToken();
         const tokenData = await fetchStates(query, token);
         return { data: tokenData, source: "token" };
-      } catch {
-        const publicData = await fetchStates(query, null);
-        return { data: publicData, source: "public" };
       }
     });
 
