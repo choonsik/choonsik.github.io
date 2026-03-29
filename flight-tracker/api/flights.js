@@ -52,9 +52,9 @@ async function getTokenFromOpenSky(clientId, clientSecret) {
         }).toString();
         
         const options = {
-            hostname: 'opensky-network.org',
+            hostname: 'auth.opensky-network.org',
             port: 443,
-            path: '/api/v1/oauth/token',
+            path: '/auth/realms/opensky-network/protocol/openid-connect/token',
             method: 'POST',
             agent: httpsAgent,
             headers: {
