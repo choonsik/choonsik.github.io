@@ -108,9 +108,18 @@ let apiClient = null;
 
 function initializeAPI() {
     // 환경 감지
-    const isDev = !window.location.hostname.includes('vercel.app') && 
-                   window.location.hostname === 'localhost';
-    const apiUrl = isDev ? 'http://localhost:3000/api/flights' : '/api/flights';
+    const hostname = window.location.hostname;
+    const isDev = hostname === 'localhost';
+    const isGithubPages = hostname.endsWith('github.io');
+    const customApiBase = window.FLIGHT_TRACKER_API_BASE;
+
+    let apiUrl = '/api/flights';
+    if (isDev) {
+        apiUrl = 'http://localhost:3000/api/flights';
+    } else if (isGithubPages) {
+        // GitHub Pages는 서버리스 함수가 없으므로 Vercel API를 사용
+        apiUrl = customApiBase || 'https://choonsik-github-io-choonsik-lees-projects.vercel.app/api/flights';
+    }
     
     apiClient = new FlightsAPI(apiUrl);
     console.log(`🔌 API 초기화: ${apiUrl}`);
