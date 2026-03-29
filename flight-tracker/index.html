@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 비행기 트래킹</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 왼쪽 사이드바 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>✈️ 비행기 트래킹</h1>
+            </div>
+            
+            <!-- 검색 및 필터 섹션 -->
+            <div class="search-section">
+                <h3>검색 및 필터</h3>
+                
+                <div class="form-group">
+                    <label for="callsign-input">콜사인 검색</label>
+                    <input 
+                        type="text" 
+                        id="callsign-input" 
+                        placeholder="예: KE, UA, AF" 
+                        title="항공사 코드 또는 비행편명 입력"
+                    >
+                </div>
+                
+                <div class="form-group">
+                    <label for="country-select">국가 필터</label>
+                    <select id="country-select">
+                        <option value="">모든 국가</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="altitude-min">최소 고도 (ft)</label>
+                    <input 
+                        type="number" 
+                        id="altitude-min" 
+                        placeholder="0" 
+                        min="0"
+                    >
+                </div>
+                
+                <div class="form-group">
+                    <label for="altitude-max">최대 고도 (ft)</label>
+                    <input 
+                        type="number" 
+                        id="altitude-max" 
+                        placeholder="45000" 
+                        min="0"
+                    >
+                </div>
+                
+                <button id="search-btn" class="btn btn-primary">🔍 검색</button>
+                <button id="reset-btn" class="btn btn-secondary">🔄 초기화</button>
+            </div>
+            
+            <!-- 상태 정보 섹션 -->
+            <div class="status-section">
+                <h3>상태 정보</h3>
+                <div class="status-item">
+                    <span class="label">트래킹 중인 항공기:</span>
+                    <span id="aircraft-count" class="value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">마지막 갱신:</span>
+                    <span id="last-update" class="value">--:--:--</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">상태:</span>
+                    <span id="status-text" class="value">대기 중...</span>
+                </div>
+            </div>
+            
+            <!-- 선택된 항공기 상세정보 -->
+            <div class="details-section">
+                <h3>항공기 상세정보</h3>
+                <div id="flight-details" class="flight-details">
+                    <p class="empty-state">지도에서 항공기를 클릭하세요</p>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- 오른쪽 지도 영역 -->
+        <main class="main-content">
+            <div id="map"></div>
+            <div id="loading-spinner" class="loading-spinner">
+                <div class="spinner"></div>
+                <p>데이터 로드 중...</p>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    
+    <!-- Custom Scripts -->
+    <script src="api.js"></script>
+    <script src="flights.js"></script>
+    <script src="map.js"></script>
+    <script src="ui.js"></script>
+    
+    <script>
+        // 메인 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeApp();
+        });
+    </script>
+</body>
+</html>
